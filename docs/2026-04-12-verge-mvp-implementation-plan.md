@@ -848,6 +848,79 @@ The recommended order is:
 
 This order matters because the product value comes from stored state and queryable evidence, not from advanced scheduling tricks.
 
+## Testing Strategy For MVP
+
+The MVP should be validated in layers, from local developer checks to full self-hosting.
+
+### 1. Workspace Checks
+
+The repository itself should have working root commands for:
+
+- `pnpm lint`
+- `pnpm format:check`
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm build`
+
+These are the baseline health checks for the Verge repo and should stay green before higher-level validation is trusted.
+
+### 2. Core Unit Tests
+
+Unit tests should cover the core logic directly, without requiring the full control plane to run.
+
+At minimum, cover:
+
+- process materialization rules
+- planning rules
+- reuse decisions
+- checkpoint resume decisions
+- repo area rollups
+
+### 3. API Integration Tests
+
+Integration tests should run against a real local Postgres instance and verify the main control-plane write paths.
+
+At minimum, cover:
+
+- creating a manual run request
+- creating runs from process specs
+- claiming work
+- recording observations
+- updating repo area state
+
+### 4. Worker Integration Tests
+
+Worker integration tests should execute real local commands through the worker path.
+
+For Verge, the first commands should include:
+
+- `oxlint`
+- `oxfmt --check`
+- `vitest`
+- `vite build`, where relevant
+
+### 5. End-to-End Self-Hosting Tests
+
+The most important end-to-end test is Verge running on the Verge repository itself.
+
+That means:
+
+- create a run request for the current Verge repo state
+- materialize real Verge processes such as `lint`, `test`, `build`, and `docs:validate`
+- execute them through the normal worker path
+- persist observations, artifacts, and health state
+- expose the results through the API and dashboard
+
+### 6. Reuse and Resume Tests
+
+After the basic self-hosting path works, verify:
+
+- safe reuse on repeated requests with matching inputs
+- resume from a saved checkpoint for one cooperative process type
+- only unfinished processes continue after resume
+
+The acceptance bar is not just that commands ran. The acceptance bar is that Verge decided what to run, executed it, stored what it learned, and exposed that state back through its own interfaces.
+
 ## Acceptance Criteria For MVP
 
 The MVP is done when a user can:

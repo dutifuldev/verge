@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: verge-postgres
+    environment:
+      POSTGRES_DB: verge
+      POSTGRES_USER: verge
+      POSTGRES_PASSWORD: verge
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verge -d verge"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - verge-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  verge-postgres-data:
