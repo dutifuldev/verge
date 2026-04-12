@@ -66,11 +66,11 @@ jobs:
       - name: Validate docs
         run: pnpm docs:validate
 
-      - name: Run unit tests
-        run: pnpm test
-
       - name: Build
         run: pnpm build
+
+      - name: Run unit tests
+        run: pnpm test
 
       - name: Run DB integration tests
         run: pnpm test:integration
