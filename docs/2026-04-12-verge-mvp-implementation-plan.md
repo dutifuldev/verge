@@ -6,7 +6,7 @@ tags: [verge, ci-cd, mvp, implementation-plan]
 
 # Verge MVP Implementation Plan
 
-This document turns the control-plane idea in [Verge CI/CD Control Plane](./verge-ci-cd-control-plane.md) into a practical first implementation plan.
+This document turns the control-plane idea in [Verge CI/CD Control Plane](./2026-04-12-verge-ci-cd-control-plane.md) into a practical first implementation plan.
 
 The goal of the MVP is not to build a perfect scheduler or a giant workflow engine. The goal is to prove the core loop:
 
@@ -64,6 +64,7 @@ The MVP should standardize on VoidZero-aligned frontend and JavaScript tooling w
 
 At minimum, the implementation should use:
 
+- `pnpm` workspaces for package management
 - Vite for frontend development and build
 - Oxlint for linting
 - Oxfmt for formatting
@@ -74,6 +75,93 @@ This matters for two reasons:
 
 - Verge should dogfood a modern, fast toolchain in its own repository
 - the first managed process definitions should exercise those tools directly on the Verge repo
+
+All application code should be written in valid TypeScript. Plain `.js` application files should not be introduced.
+
+## Repository Layout Decision
+
+The repo should use a small `pnpm` workspace with a strict separation between deployable apps, shared packages, infrastructure assets, and docs.
+
+The initial layout should be:
+
+```text
+/
+  apps/
+    api/
+    web/
+    worker/
+  packages/
+    contracts/
+    core/
+    db/
+  infra/
+    local/
+    k8s/
+  scripts/
+  docs/
+  package.json
+  pnpm-workspace.yaml
+  tsconfig.base.json
+```
+
+Layout rules:
+
+- `apps/` contains only deployable services
+- `packages/` contains shared TypeScript libraries with no deployment-specific concerns
+- `infra/local/` contains local development infrastructure such as Compose files and seed helpers
+- `infra/k8s/` contains deployment manifests or Helm/Kustomize material when Kubernetes support is added
+- `scripts/` contains small repository automation scripts only
+- the repository root should hold workspace-level config, not feature code
+
+## Package Responsibilities
+
+The first workspace packages should have these responsibilities:
+
+`apps/api`
+
+- Fastify control-plane API
+- webhook ingestion
+- run planning orchestration
+- SSE endpoints
+- GitHub integration
+
+`apps/web`
+
+- React + Vite dashboard
+- repository health views
+- run detail views
+- live updates
+
+`apps/worker`
+
+- process execution
+- lease claiming
+- heartbeat and observation emission
+- log and artifact reporting
+
+`packages/contracts`
+
+- shared Zod schemas
+- API request and response contracts
+- worker protocol payloads
+- event payload schemas
+
+`packages/core`
+
+- domain types that are not transport-specific
+- planning rules
+- evidence and freshness logic
+- process definition helpers
+- fingerprinting and reuse decision helpers
+
+`packages/db`
+
+- Kysely database types
+- migrations
+- query helpers
+- transaction boundaries for core persistence paths
+
+This is intentionally small. New packages should only be added when a dependency direction problem appears, not preemptively.
 
 ### Out of Scope
 
@@ -429,16 +517,25 @@ Create the initial monorepo or workspace layout:
 - `apps/api`
 - `apps/web`
 - `apps/worker`
-- `packages/schemas`
+- `packages/contracts`
+- `packages/core`
 - `packages/db`
+- `infra/local`
+- `infra/k8s`
+- `scripts`
 
 Bootstrap:
 
+- `pnpm-workspace.yaml`
+- root `package.json` for workspace scripts only
+- shared `tsconfig.base.json`
 - TypeScript project config
 - linting and formatting wired through `oxlint` and `oxfmt`
 - Fastify app skeleton
 - React + Vite app skeleton
-- shared Zod schemas
+- worker app skeleton
+- shared contracts package
+- shared core package
 - Postgres migration setup
 - local dev stack with Postgres and S3-compatible storage
 - local self-hosting process definitions for the Verge repo
@@ -449,6 +546,7 @@ Exit criteria:
 - migrations run
 - local object storage is reachable
 - the repo has working `oxlint`, `oxfmt`, and `vite`-based commands
+- the workspace dependency graph is clean, with shared logic living in `packages/` instead of cross-importing between apps
 
 ### Phase 1: Event Ingestion and Process Registry
 
