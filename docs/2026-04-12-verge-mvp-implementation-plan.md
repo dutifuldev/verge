@@ -48,11 +48,11 @@ If a proposed feature does not materially improve one of those answers, it shoul
 - single-repository support
 - self-hosting on the Verge repository as the primary test target
 - GitHub App webhook ingestion
-- process registry with static process definitions
+- process spec registry with static process specs
 - Postgres-backed planner and work queue
 - worker execution with leases and heartbeats
 - process-level evidence for all processes
-- subject-level evidence for cooperative process types that can expose subjects
+- optional finer-grained evidence for cooperative process types when needed
 - logs and artifacts in an object storage abstraction
 - live run status in an API and dashboard
 - one safe cache reuse path
@@ -74,7 +74,7 @@ Where adjacent tooling choices are needed, prefer the same ecosystem and a minim
 This matters for two reasons:
 
 - Verge should dogfood a modern, fast toolchain in its own repository
-- the first managed process definitions should exercise those tools directly on the Verge repo
+- the first managed process specs should exercise those tools directly on the Verge repo
 
 All application code should be written in valid TypeScript. Plain `.js` application files should not be introduced.
 
@@ -174,7 +174,7 @@ The first workspace packages should have these responsibilities:
 - domain types that are not transport-specific
 - planning rules
 - evidence and freshness logic
-- process definition helpers
+- process spec helpers
 - fingerprinting and reuse decision helpers
 
 `packages/db`
@@ -233,16 +233,16 @@ packages:
 
 ### Process Splitting
 
-- Verge should provide a generic split model in TypeScript for all projects that use the library
-- each project should define its own concrete task definitions in TypeScript config
-- the default split result should be a small set of named tasks with stable keys
-- extra sharding should happen inside a task only when a task becomes too large
-- the initial split kinds should be:
-  - `none`
-  - `namedTasks`
+- Verge should provide a generic process materialization model in TypeScript for all projects that use the library
+- each project should define its own concrete processes in TypeScript config
+- the default result should be a small set of named processes with stable keys
+- finer sharding should happen inside a process only when a process becomes too large
+- the initial materialization kinds should be:
+  - `singleProcess`
+  - `namedProcesses`
   - `fixedShards`
-- the first test split strategy should be named tasks mapped to clear repo areas or projects such as `api`, `web`, `worker`, or `packages`
-- raw glob-heavy task selection should not be the primary long-term API
+- the first test materialization strategy should be named processes mapped to clear repo areas or projects such as `api`, `web`, `worker`, or `packages`
+- raw glob-heavy process selection should not be the primary long-term API
 
 ### Local Infrastructure
 
@@ -329,7 +329,8 @@ The MVP should implement the following core records.
 ### Repository and Process Metadata
 
 - `repositories`
-- `process_definitions`
+- `process_specs`
+- `processes`
 - `process_observed_areas`
 - `process_execution_profiles`
 
@@ -343,7 +344,7 @@ The MVP should implement the following core records.
 ### Execution Records
 
 - `runs`
-- `run_tasks`
+- `run_processes`
 - `run_leases`
 - `run_heartbeats`
 - `run_lifecycle_events`
@@ -353,7 +354,6 @@ The MVP should implement the following core records.
 
 ### Evidence Records
 
-- `subjects`
 - `observations`
 - `observation_events`
 - `repo_areas`
@@ -363,15 +363,22 @@ The MVP should implement the following core records.
 
 The table names can change, but the MVP must preserve these responsibilities.
 
-`process_definitions`
+`process_specs`
 
-- stable process key
+- stable process spec key
 - display name
 - process kind
 - execution config
 - reuse policy
 - checkpoint capability
 - declared observed areas
+
+`processes`
+
+- process spec
+- stable process key
+- display label
+- process metadata
 
 `run_requests`
 
@@ -384,7 +391,7 @@ The table names can change, but the MVP must preserve these responsibilities.
 
 `planned_runs`
 
-- process definition
+- process spec
 - run request
 - decision reason
 - planned action: `run`, `reuse`, `skip`
@@ -393,36 +400,28 @@ The table names can change, but the MVP must preserve these responsibilities.
 `runs`
 
 - run id
-- process definition
+- process spec
 - commit SHA
 - execution scope hash
 - current status
 - started/finished timestamps
 - reused-from run id, if any
 
-`run_tasks`
+`run_processes`
 
 - run id
-- stable task key
-- task label
-- task type
+- process key
+- process label
+- process type
 - status
 - selection payload
 - started/finished timestamps
 - attempt count
 
-`subjects`
-
-- process definition
-- stable subject hash
-- canonical subject string
-- display label
-- subject metadata
-
 `observations`
 
 - run id
-- subject id, nullable for process-only evidence
+- process key, nullable for run-level evidence
 - execution scope fields
 - status
 - observed at
@@ -440,18 +439,18 @@ The table names can change, but the MVP must preserve these responsibilities.
 
 The MVP should not wait for a perfect identity system. Implement the minimum durable version:
 
-1. Accept explicit subject IDs from cooperative adapters.
-2. Otherwise derive a canonical string from process kind, config key, path, logical path, title, and parameterization.
+1. Accept explicit stable process IDs from cooperative adapters.
+2. Otherwise derive a canonical string from process spec kind, config key, path, logical path, title, and parameterization.
 3. Hash that canonical string for storage and joins.
 
 For MVP, do not implement aggressive history-repair heuristics. Store enough metadata to add that later.
 
 ## Execution Scope Model For MVP
 
-Each observation should record an execution scope separate from subject identity. The initial scope should include:
+Each observation should record an execution scope separate from process identity. The initial scope should include:
 
 - commit SHA
-- process definition version or config hash
+- process spec version or config hash
 - runtime version
 - platform or runner class
 - dependency lock hash, if available
@@ -466,7 +465,7 @@ Inputs:
 
 - event type
 - changed files
-- process definitions
+- process specs
 - observed areas per process
 - existing evidence freshness
 - reuse policy
@@ -474,7 +473,7 @@ Inputs:
 Outputs:
 
 - a list of planned runs
-- the tasks inside each planned run, when the process is split
+- the processes inside each planned run, when the process spec materializes more than one process
 - a decision reason for each planned run
 - a reuse decision, if applicable
 
@@ -487,42 +486,42 @@ The initial planning rules should be simple:
 
 Do not attempt probabilistic scheduling in the MVP.
 
-## Process Split Model For MVP
+## Process Materialization Model For MVP
 
 Verge should use a simple runtime model:
 
-process -> run -> task -> observation
+process spec -> run -> process -> observation
 
-A task is one runnable piece of work inside a run.
+A process is one standalone computation with a stable ID.
 
-The library should provide the generic split mechanism. Each project should provide the actual task definitions in TypeScript.
+The library should provide the generic materialization mechanism. Each project should provide the actual process materialization rules in TypeScript.
 
 That means:
 
-- Verge defines split kinds and task lifecycle rules
-- a repository defines its own task names and boundaries in TypeScript
-- the planner materializes concrete run tasks from those definitions for each run
+- Verge defines materialization kinds and process lifecycle rules
+- a repository defines its own process names and boundaries in TypeScript
+- the planner materializes concrete processes from those definitions for each run
 
-For MVP, the supported split kinds should be:
+For MVP, the supported materialization kinds should be:
 
-- `none`
-- `namedTasks`
+- `singleProcess`
+- `namedProcesses`
 - `fixedShards`
 
-The preferred default is `namedTasks`.
+The preferred default is `namedProcesses`.
 
-For tests, that means a project should define a small number of stable tasks such as:
+For tests, that means a project should define a small number of stable processes such as:
 
 - `api`
 - `web`
 - `worker`
 - `packages`
 
-Each task should map to a clear repo area, package, or test project. Verge should run those tasks separately.
+Each process should map to a clear repo area, package, or test project. Verge should run those processes separately.
 
-If one task becomes too large, Verge may shard inside that task later. It should not start by inventing complex splits from arbitrary shell commands.
+If one process becomes too large, Verge may shard inside that process later. It should not start by inventing complex splits from arbitrary shell commands.
 
-This is important for checkpointing. Checkpoints should record which tasks finished, failed, or remain pending. In practice, that means Verge checkpoints completed tasks, not raw process memory.
+This is important for checkpointing. Checkpoints should record which processes finished, failed, or remain pending. In practice, that means Verge checkpoints completed processes, not raw process memory.
 
 ## Worker Protocol For MVP
 
@@ -535,7 +534,7 @@ Workers must be able to:
 - send a heartbeat at a fixed interval
 - emit lifecycle events such as `started`, `passed`, `failed`, `timed_out`, `interrupted`
 - upload logs and artifact metadata
-- emit zero or more subject observations
+- emit zero or more process observations
 - publish checkpoint metadata if the process supports it
 
 Workers should not contain planning logic. They execute resolved work and report what happened.
@@ -546,7 +545,7 @@ Implement one narrow, auditable reuse path.
 
 Suggested reuse policy:
 
-- process definition explicitly allows reuse
+- process spec explicitly allows reuse
 - execution scope hash matches
 - declared input fingerprint matches
 - prior run status is successful
@@ -562,15 +561,15 @@ The initial checkpoint contract should include:
 
 - checkpoint key
 - run id
-- completed task keys
-- pending task keys
+- completed process keys
+- pending process keys
 - serialized payload location in object storage
 - creation timestamp
 - resumable-until timestamp
 
 The planner can prefer resume over fresh execution only when:
 
-- the process definition supports checkpoints
+- the process spec supports checkpoints
 - the checkpoint is still valid
 - the input fingerprint still matches the resumable boundary rules
 
@@ -589,7 +588,7 @@ The Fastify API should expose a small control-plane surface.
 
 - `GET /run-requests/:id`
 - `GET /runs/:id`
-- `GET /runs/:id/tasks`
+- `GET /runs/:id/processes`
 - `GET /runs/:id/events`
 - `POST /workers/claim`
 - `POST /workers/:runId/heartbeat`
@@ -604,7 +603,7 @@ The Fastify API should expose a small control-plane surface.
 - `GET /repositories/:repo/areas`
 - `GET /repositories/:repo/commits/:sha`
 - `GET /repositories/:repo/pull-requests/:number`
-- `GET /process-definitions`
+- `GET /process-specs`
 
 ### Live Updates
 
@@ -640,16 +639,16 @@ The run detail should show:
 
 - lifecycle timeline
 - heartbeat freshness
-- task status
+- process status
 - logs and artifacts
-- subject observations, if available
+- process observations, if available
 - checkpoint creation and resume information
 
 ## Self-Hosting Requirement
 
 The MVP should validate itself by running Verge on the Verge repo.
 
-That means the first supported repository should be this repository, with process definitions that execute Verge's own:
+That means the first supported repository should be this repository, with process specs that execute Verge's own:
 
 - lint checks
 - type checks
@@ -699,7 +698,7 @@ Bootstrap:
 - Postgres migration setup
 - local dev stack with Postgres
 - filesystem-backed local artifact and checkpoint storage
-- local self-hosting process definitions for the Verge repo
+- local self-hosting process specs for the Verge repo
 
 Exit criteria:
 
@@ -716,16 +715,16 @@ Implement:
 - GitHub webhook receiver
 - signature validation
 - repository registration
-- static process definition storage
+- static process spec storage
 - basic run request creation
-- initial Verge-on-Verge process definitions
+- initial Verge-on-Verge process specs
 
 Exit criteria:
 
 - a GitHub push or pull request event creates a stored run request
-- process definitions can be listed from the API
+- process specs can be listed from the API
 - the Verge repository is registered as the first managed repository
-- process definitions exist for `oxlint`, `oxfmt` validation, and `vite`-based build validation where relevant
+- process specs exist for `oxlint`, `oxfmt` validation, and `vite`-based build validation where relevant
 
 ### Phase 2: Planner and Queue
 
@@ -767,7 +766,7 @@ Exit criteria:
 Implement:
 
 - process-level observations
-- subject-level observations for at least one cooperative process
+- optional finer-grained observations for at least one cooperative process
 - area freshness rollups
 - repository health queries
 - commit and pull request detail queries
@@ -898,7 +897,7 @@ Mitigation:
 
 After the MVP works, the next useful expansions are:
 
-- richer area mapping and subject extraction
+- richer area mapping and deeper process extraction
 - flaky-signal tracking
 - broader reuse support across more process types
 - multi-repo support

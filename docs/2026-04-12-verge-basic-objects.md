@@ -12,7 +12,7 @@ It is intentionally simpler than a full database schema. The goal is to explain 
 
 This is the core runtime shape:
 
-process -> run -> task -> observation
+process spec -> run -> process -> observation
 
 Everything else should support that shape, not hide it.
 
@@ -31,27 +31,27 @@ Example:
 
 - the Verge repo itself
 
-### Process Definition
+### Process Spec
 
-A process definition describes a kind of work Verge knows how to run.
+A process spec is the reusable recipe for a kind of work.
 
 Plainly:
 
-- this says what kind of check or job exists
-- it is a reusable definition, not one specific execution
+- this says how a family of processes should be produced
+- it is the definition, not one specific computation
 
 Examples:
 
-- `lint`
 - `test`
 - `build`
+- `lint`
 - `docs:validate`
 
-A process definition should answer:
+A process spec should answer:
 
 - what command or runner is used
+- how concrete processes are produced
 - what repo areas it observes
-- whether it can split into tasks
 - whether it supports reuse
 - whether it supports checkpoints
 
@@ -78,11 +78,11 @@ A run request should answer:
 
 ### Run
 
-A run is one process being evaluated for one run request.
+A run is one evaluation of one process spec for one run request.
 
 Plainly:
 
-- this is one actual attempt to run or reuse a process for a specific commit or request
+- this is the container for all concrete processes produced from one spec for one request
 
 Examples:
 
@@ -91,35 +91,37 @@ Examples:
 
 A run should answer:
 
-- which process this is
+- which process spec this is
 - which request it belongs to
 - what status it has
-- whether it ran fresh or reused a prior result
+- whether it ran fresh or reused prior work
 
-### Run Task
+### Process
 
-A run task is one runnable piece of a run.
+A process is one standalone computation with a stable ID.
 
 Plainly:
 
-- if a run is too large or naturally breaks into parts, Verge runs those parts as tasks
-- a task is the smallest chunk Verge schedules, retries, and checkpoints
+- this is one concrete piece of work Verge can identify and run
+- if you think of a single test, build target, or smoke scenario, that is a process
 
 Examples:
 
 - `api` tests
 - `web` tests
+- one build target
 - one smoke-test scenario
-- the whole build, if build is not split
+- one single test case
 
-A run may have:
+A process should answer:
 
-- one task, if it is not split
-- many tasks, if it is split
+- what exact computation this is
+- what stable key identifies it
+- which process spec produced it
 
 ### Observation
 
-An observation is what a run or task learned.
+An observation is what a run learned about a process.
 
 Plainly:
 
@@ -128,7 +130,7 @@ Plainly:
 
 Examples:
 
-- the build passed
+- the build target passed
 - `api` tests failed
 - docs validation observed the `docs` area successfully
 - a benchmark result changed
@@ -147,7 +149,7 @@ A repo area is a part of the repository that Verge cares about.
 Plainly:
 
 - this is a named surface of the repo
-- processes observe areas, and health is rolled up by area
+- process specs and processes observe areas, and health is rolled up by area
 
 Examples:
 
@@ -184,7 +186,7 @@ A run event is a timeline entry.
 
 Plainly:
 
-- this records things that happened while a run or task was in progress
+- this records things that happened while a run was in progress
 
 Examples:
 
@@ -215,30 +217,13 @@ A checkpoint is saved progress for a run.
 
 Plainly:
 
-- this says which tasks are already done and which are still left
+- this says which processes in the run are already done and which are still left
 - it is not a memory dump or a paused shell session
 
 Examples:
 
-- `api` and `web` test tasks are done, `worker` is still pending
+- `api` and `web` processes are done, `worker` is still pending
 - smoke-test scenarios A and B are done, C is left
-
-### Subject
-
-A subject is one specific thing observed inside a process.
-
-Plainly:
-
-- this is finer-grained than a task
-- you only need this when you care about stable identity below the task level
-
-Examples:
-
-- one test case
-- one build target
-- one smoke scenario
-
-Subjects are useful, but they are not the first thing a user needs to understand Verge.
 
 ## How The Objects Interact
 
@@ -246,27 +231,27 @@ The normal flow should look like this:
 
 1. A `Repository` receives a change or request.
 2. Verge creates a `RunRequest`.
-3. Verge selects one or more `ProcessDefinition` records that matter for that request.
-4. Verge creates a `Run` for each selected process.
-5. Each `Run` either stays whole or expands into one or more `RunTask` records.
-6. Workers execute the `RunTask` records.
-7. While tasks run, Verge records `RunEvent` entries and saves any `Artifact` records.
-8. The run and its tasks produce `Observation` records.
+3. Verge selects one or more `ProcessSpec` records that matter for that request.
+4. Verge creates a `Run` for each selected process spec.
+5. Each `Run` materializes one or more `Process` records with stable keys.
+6. Workers execute those processes for the run.
+7. While work is in progress, Verge records `RunEvent` entries and saves any `Artifact` records.
+8. The run produces `Observation` records for the processes that ran.
 9. Those observations update `RepoAreaState` for the affected `RepoArea` records.
-10. The UI and API show current runs, task progress, and repository health.
+10. The UI and API show current runs, process progress, and repository health.
 
 ## Relationship Summary
 
 The model should read like this:
 
-- one `Repository` has many `ProcessDefinition` records
+- one `Repository` has many `ProcessSpec` records
 - one `RunRequest` belongs to one `Repository`
 - one `RunRequest` creates many `Run` records
-- one `Run` belongs to one `ProcessDefinition`
-- one `Run` has one or more `RunTask` records
-- one `Run` or `RunTask` can produce many `Observation` records
+- one `Run` belongs to one `ProcessSpec`
+- one `Run` contains one or more `Process` records
+- one `Run` can produce many `Observation` records
 - many `Observation` records update one `RepoAreaState`
-- one `Run` or `RunTask` can have many `RunEvent`, `Artifact`, and `Checkpoint` records
+- one `Run` can have many `RunEvent`, `Artifact`, and `Checkpoint` records
 
 ## Simple Example
 
@@ -275,16 +260,17 @@ Suppose a pull request changes files in `apps/api` and `docs`.
 Verge would do something like this:
 
 1. Create one `RunRequest` for the pull request.
-2. Select the `lint`, `test`, `build`, and `docs:validate` process definitions.
-3. Create four `Run` records, one for each process.
-4. Split the `test` run into `api` and `packages` tasks because those are the relevant named tasks for that repo.
-5. Run `lint`, `build`, and `docs:validate`, along with the `api` and `packages` test tasks.
-6. Save events, logs, and reports while those tasks run.
-7. Record observations such as:
+2. Select the `lint`, `test`, `build`, and `docs:validate` process specs.
+3. Create four `Run` records, one for each process spec.
+4. Materialize concrete processes for each run.
+5. For the `test` run, materialize processes such as `api` and `packages` because those are the relevant stable computations for that repo.
+6. Execute those processes.
+7. Save events, logs, and reports while they run.
+8. Record observations such as:
    - `lint` passed
    - `api` tests failed
    - `docs:validate` passed
-8. Update area state so `docs` is fresh, `api` is fresh but failed, and unrelated areas may remain stale or unknown.
+9. Update area state so `docs` is fresh, `api` is fresh but failed, and unrelated areas may remain stale or unknown.
 
 ## What Should Stay Secondary
 
@@ -296,7 +282,7 @@ For the first version, these should stay secondary:
 - heartbeat details
 - detailed planning internals
 - low-level checkpoint payload structure
-- subject history repair logic
+- deep identity-repair logic
 
 They still matter, but they are support machinery, not the main product story.
 
@@ -304,9 +290,9 @@ They still matter, but they are support machinery, not the main product story.
 
 If the model feels confusing, come back to this:
 
-- a process is a kind of work
-- a run is one execution of that work for one request
-- a task is one piece of that run
+- a process spec is the recipe
+- a run is one evaluation of that recipe for one request
+- a process is one standalone computation inside that run
 - an observation is what the work learned
 
 Repository health is then just the rolled-up result of many observations over time.

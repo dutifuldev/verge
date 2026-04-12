@@ -57,23 +57,19 @@ Verge exists to optimize for fast signal, growing confidence, and eventual cover
 
 ## What Counts As a Process
 
-A process is any runnable thing that reveals something about the state of the repository.
+A process is one standalone computation that reveals something about the state of the repository.
 
 Examples:
 
-- unit tests
-- end-to-end tests
-- builds
-- linters
-- release checks
-- benchmarks
-- code generation
-- documentation validation
-- migration dry runs
-- smoke tests
-- agent-triggered investigations
+- one test case
+- one stable test group such as `api`
+- one build target
+- one smoke-test scenario
+- one benchmark case
+- one documentation validation pass
+- one agent investigation unit
 
-Tests are only one kind of process.
+Higher-level things like `test`, `build`, or `docs:validate` are better thought of as process specs or process families. A process is the concrete computation that gets a stable identity and can actually run.
 
 ## What Counts As Evidence
 
@@ -95,8 +91,8 @@ A workflow status is only a summary. Evidence is the useful part underneath it.
 Verge models a repository as:
 
 - important areas or surfaces
-- processes that observe those areas
-- runs that produce evidence
+- process specs that produce concrete processes
+- runs that execute those processes
 - a live state made from accumulated evidence over time
 
 From that model, Verge should be able to answer:
@@ -112,10 +108,10 @@ From that model, Verge should be able to answer:
 The main information flow looks like this:
 
 1. A commit, pull request event, manual request, or agent request comes in.
-2. The planner looks at the change, the process metadata, and the current evidence state.
-3. Verge decides which processes should run now and whether any of them should expand into multiple tasks.
-4. Before starting each process, Verge checks whether it can reuse a past result, resume from a checkpoint, or must start fresh.
-5. While the process runs, the runner streams heartbeats, logs, progress, artifacts, and any new checkpoints.
+2. The planner looks at the change, the process spec metadata, and the current evidence state.
+3. Verge decides which process specs matter now and which concrete processes should exist inside each run.
+4. Before starting each run, Verge checks whether it can reuse a past result, resume from a checkpoint, or must start fresh.
+5. While work runs, the runner streams heartbeats, logs, progress, artifacts, and any new checkpoints.
 6. Verge stores that information and updates the live model of repository health.
 7. The next run uses that stored state to avoid wasting work.
 
@@ -136,21 +132,24 @@ Important rule:
 - record data as granularly as possible
 - reuse or resume at the coarsest level that stays safe
 
-That means Verge may save per-subject data for analysis while only checkpointing at scenario or phase boundaries when resuming work.
+That means Verge may save fine-grained data for analysis while only checkpointing at safe process or phase boundaries when resuming work.
 
-## Execution Tasks
+## Process Specs And Processes
 
-A process run may stay whole or may expand into multiple tasks.
+A run belongs to a process spec and contains one or more concrete processes.
 
-A task is one runnable piece of work inside a run.
+A process spec is the reusable recipe, such as `test`, `build`, or `docs:validate`.
 
-Examples:
+A process is one standalone computation with a stable identity.
 
-- the whole build
-- the API portion of a test run
+Examples of processes:
+
+- the `api` part of a test run
 - one smoke-test scenario
+- one build target
+- one single test case
 
-This is the level Verge should schedule, retry, and checkpoint.
+This is the level Verge should identify, schedule, retry, and checkpoint.
 
 ## Identity Model
 
@@ -158,12 +157,12 @@ Verge should use a general identity model that is not tied to tests.
 
 The core terms should be:
 
-- process: the runnable thing
-- subject: one meaningful observable unit inside a process
-- subject ID: the stable identity of that unit
-- observation: one recorded result for that subject under a particular execution scope
+- process spec: the reusable recipe
+- process: one standalone computation with a stable ID
+- process ID: the stable identity of that computation
+- observation: one recorded result for that process under a particular execution scope
 
-Examples of subjects:
+Examples of processes:
 
 - a test case
 - a build target
@@ -173,29 +172,29 @@ Examples of subjects:
 - a release validation scenario
 - an agent investigation unit
 
-## Subject ID Strategy
+## Process ID Strategy
 
 Verge should use a hybrid identity model.
 
 Identity should be resolved in this order:
 
-1. explicit stable subject ID, if present
-2. derived subject identity, if no explicit ID exists
+1. explicit stable process ID, if present
+2. derived process identity, if no explicit ID exists
 3. heuristic continuity matching for history repair, not as the primary identity
 
 This means Verge can work immediately without requiring manual IDs everywhere, while still supporting long-term durable identities where needed.
 
 ## Derived Identity
 
-When no explicit subject ID exists, Verge should derive one from the structure of the process output.
+When no explicit process ID exists, Verge should derive one from the structure of the process output.
 
 The derived identity should usually include:
 
-- process kind or framework
-- process key or config key
+- process spec kind or framework
+- process spec key or config key
 - file or source path, if relevant
 - logical path within the process, such as suite path or target path
-- subject title or logical name
+- process title or logical name
 - parameterization key, if relevant
 
 Line numbers should not be part of the primary identity because they are too fragile. They may be stored as extra metadata, but not used as the canonical identifier.
@@ -207,9 +206,9 @@ The canonical identity should be stored as:
 
 ## Execution Scope
 
-Subject identity and execution scope should stay separate.
+Process identity and execution scope should stay separate.
 
-The subject ID answers:
+The process ID answers:
 
 - what logical thing is this?
 
@@ -225,13 +224,13 @@ Execution scope should include things like:
 - lockfile or dependency hash
 - process config hash
 
-Commit SHA belongs in the execution scope, not in the subject identity itself.
+Commit SHA belongs in the execution scope, not in the process identity itself.
 
 ## Recording Status
 
-For each subject, Verge should save:
+For each process, Verge should save:
 
-- a stable subject record
+- a stable process record
 - one or more observations
 - append-only lifecycle events
 
@@ -251,20 +250,19 @@ This should support both:
 
 ## Checkpoint Granularity
 
-Verge should record observations at the finest practical level, often per subject.
+Verge should record observations at the finest practical level, often per process.
 
 But resuming should happen at the coarsest safe boundary.
 
 That means:
 
-- save per-subject status whenever possible
+- save per-process status whenever possible
 - allow reuse, skipping, or continuation using those saved results
 - avoid pretending that every arbitrary in-process sub-step is safely resumable
 
 For many processes, the right checkpoint boundary will be:
 
-- per subject
-- per task
+- per process
 - per scenario
 - per phase
 
