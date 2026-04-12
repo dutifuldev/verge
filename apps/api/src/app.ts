@@ -505,9 +505,12 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
     return { ok: true };
   });
 
-  app.post("/workers/:runId/checkpoints", async (request) => {
+  app.post("/workers/:runId/checkpoints", async (request, reply) => {
     const params = request.params as { runId: string };
     const input = recordCheckpointInputSchema.parse(request.body);
+    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
+      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    }
     const run = await context.connection.db
       .selectFrom("runs")
       .select(["process_spec_id", "fingerprint"])

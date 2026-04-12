@@ -152,6 +152,7 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
 
       await postJson(`/workers/${assignment.runId}/checkpoints`, {
         workerId,
+        runProcessId: assignment.runProcessId,
         completedProcessKeys,
         pendingProcessKeys,
         storagePath: checkpointArtifact.storagePath,
@@ -179,10 +180,41 @@ const main = async (): Promise<void> => {
       continue;
     }
 
-    const exitCode = await executeProcess(claim.assignment);
-    if (once) {
-      process.exitCode = exitCode;
-      return;
+    try {
+      const exitCode = await executeProcess(claim.assignment);
+      if (once) {
+        process.exitCode = exitCode;
+        return;
+      }
+    } catch (error) {
+      console.error(
+        error instanceof Error
+          ? `Failed assignment ${claim.assignment.processKey}: ${error.stack ?? error.message}`
+          : error,
+      );
+
+      try {
+        await postJson(`/workers/${claim.assignment.runId}/events`, {
+          workerId,
+          runProcessId: claim.assignment.runProcessId,
+          kind: "failed",
+          message: `Worker failed while executing ${claim.assignment.processLabel}`,
+          payload: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      } catch (reportError) {
+        console.error(
+          reportError instanceof Error
+            ? `Failed to report assignment failure: ${reportError.stack ?? reportError.message}`
+            : reportError,
+        );
+      }
+
+      if (once) {
+        process.exitCode = 1;
+        return;
+      }
     }
   }
 };

@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 const DOCS_DIR = path.resolve("docs");
@@ -36,7 +36,7 @@ const ensureFrontmatter = (content: string, filePath: string): void => {
   }
 };
 
-const ensureLinks = (content: string, filePath: string): void => {
+const ensureLinks = async (content: string, filePath: string): Promise<void> => {
   const links = Array.from(content.matchAll(/\[[^\]]+\]\(([^)]+)\)/g), (match) => match[1]);
   for (const link of links) {
     if (!link.startsWith("./")) {
@@ -46,6 +46,11 @@ const ensureLinks = (content: string, filePath: string): void => {
     if (!target.startsWith(DOCS_DIR)) {
       throw new Error(`${filePath} contains an out-of-docs relative link: ${link}`);
     }
+    try {
+      await access(target);
+    } catch {
+      throw new Error(`${filePath} contains a missing relative doc link: ${link}`);
+    }
   }
 };
 
@@ -54,7 +59,7 @@ const main = async (): Promise<void> => {
   for (const filePath of files) {
     const content = await readFile(filePath, "utf8");
     ensureFrontmatter(content, filePath);
-    ensureLinks(content, filePath);
+    await ensureLinks(content, filePath);
   }
 
   console.log(`Validated ${files.length} docs files.`);

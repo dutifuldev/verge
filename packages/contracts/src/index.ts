@@ -171,6 +171,7 @@ export const recordArtifactInputSchema = z.object({
 
 export const recordCheckpointInputSchema = z.object({
   workerId: z.string().min(1).optional(),
+  runProcessId: z.string().uuid(),
   completedProcessKeys: z.array(z.string()).default([]),
   pendingProcessKeys: z.array(z.string()).default([]),
   storagePath: z.string().optional(),
