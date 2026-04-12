@@ -479,8 +479,8 @@ export const createEventIngestion = async (
     eventName: string;
     payload: unknown;
   },
-): Promise<Selectable<EventIngestionsTable>> =>
-  db
+): Promise<Selectable<EventIngestionsTable>> => {
+  const inserted = await db
     .insertInto("event_ingestions")
     .values({
       id: randomUUID(),
@@ -492,7 +492,24 @@ export const createEventIngestion = async (
     })
     .onConflict((oc) => oc.columns(["repository_id", "source", "delivery_id"]).doNothing())
     .returningAll()
-    .executeTakeFirstOrThrow();
+    .executeTakeFirst();
+
+  if (inserted) {
+    return inserted;
+  }
+
+  const existing = await getEventIngestionByDelivery(db, {
+    repositoryId: input.repositoryId,
+    source: input.source,
+    deliveryId: input.deliveryId,
+  });
+
+  if (!existing) {
+    throw new Error("Event ingestion lookup failed");
+  }
+
+  return existing;
+};
 
 export const createRunRequest = async (
   db: Kysely<VergeDatabase>,
@@ -782,71 +799,79 @@ export const claimNextRunProcess = async (
     workerId: string;
     leaseSeconds?: number;
   },
-): Promise<ClaimedRunProcess | null> => {
-  await expireLeases(db);
+): Promise<ClaimedRunProcess | null> =>
+  db.transaction().execute(async (trx) => {
+    await expireLeases(trx);
 
-  const candidate = await db
-    .selectFrom("run_processes")
-    .innerJoin("runs", "runs.id", "run_processes.run_id")
-    .innerJoin("run_requests", "run_requests.id", "runs.run_request_id")
-    .innerJoin("repositories", "repositories.id", "run_requests.repository_id")
-    .innerJoin("process_specs", "process_specs.id", "runs.process_spec_id")
-    .select([
-      "run_processes.id as runProcessId",
-      "run_processes.run_id as runId",
-      "run_processes.process_key as processKey",
-      "run_processes.process_label as processLabel",
-      "run_processes.process_type as processType",
-      "run_processes.selection_payload as selectionPayload",
-      "run_requests.id as runRequestId",
-      "repositories.slug as repositorySlug",
-      "repositories.root_path as repositoryRootPath",
-      "process_specs.key as processSpecKey",
-      "process_specs.display_name as processSpecDisplayName",
-      "process_specs.kind as processSpecKind",
-      "process_specs.checkpoint_enabled as checkpointEnabled",
-      "process_specs.base_command as baseCommand",
-    ])
-    .where("run_processes.status", "=", "queued")
-    .orderBy("run_processes.created_at", "asc")
-    .executeTakeFirst();
+    const candidate = await trx
+      .selectFrom("run_processes")
+      .innerJoin("runs", "runs.id", "run_processes.run_id")
+      .innerJoin("run_requests", "run_requests.id", "runs.run_request_id")
+      .innerJoin("repositories", "repositories.id", "run_requests.repository_id")
+      .innerJoin("process_specs", "process_specs.id", "runs.process_spec_id")
+      .select([
+        "run_processes.id as runProcessId",
+        "run_processes.run_id as runId",
+        "run_processes.process_key as processKey",
+        "run_processes.process_label as processLabel",
+        "run_processes.process_type as processType",
+        "run_processes.selection_payload as selectionPayload",
+        "run_requests.id as runRequestId",
+        "repositories.slug as repositorySlug",
+        "repositories.root_path as repositoryRootPath",
+        "process_specs.key as processSpecKey",
+        "process_specs.display_name as processSpecDisplayName",
+        "process_specs.kind as processSpecKind",
+        "process_specs.checkpoint_enabled as checkpointEnabled",
+        "process_specs.base_command as baseCommand",
+      ])
+      .where("run_processes.status", "=", "queued")
+      .orderBy("run_processes.created_at", "asc")
+      .forUpdate()
+      .skipLocked()
+      .executeTakeFirst();
 
-  if (!candidate) {
-    return null;
-  }
+    if (!candidate) {
+      return null;
+    }
 
-  const leaseExpiresAt = new Date(Date.now() + (input.leaseSeconds ?? 30) * 1000);
+    const leaseExpiresAt = new Date(Date.now() + (input.leaseSeconds ?? 30) * 1000);
+    const claimed = await trx
+      .updateTable("run_processes")
+      .set({
+        status: "claimed",
+        claimed_by: input.workerId,
+        lease_expires_at: leaseExpiresAt,
+        last_heartbeat_at: new Date(),
+      })
+      .where("id", "=", candidate.runProcessId)
+      .where("status", "=", "queued")
+      .returning("id")
+      .executeTakeFirst();
 
-  await db
-    .updateTable("run_processes")
-    .set({
-      status: "claimed",
-      claimed_by: input.workerId,
-      lease_expires_at: leaseExpiresAt,
-      last_heartbeat_at: new Date(),
-    })
-    .where("id", "=", candidate.runProcessId)
-    .execute();
+    if (!claimed) {
+      return null;
+    }
 
-  return {
-    runId: candidate.runId,
-    runProcessId: candidate.runProcessId,
-    runRequestId: candidate.runRequestId,
-    repositorySlug: candidate.repositorySlug,
-    repositoryRootPath: candidate.repositoryRootPath,
-    processSpecKey: candidate.processSpecKey,
-    processSpecDisplayName: candidate.processSpecDisplayName,
-    processSpecKind: candidate.processSpecKind,
-    processKey: candidate.processKey,
-    processLabel: candidate.processLabel,
-    areaKeys: parseJson<{ areaKeys?: string[] }>(candidate.selectionPayload).areaKeys ?? [],
-    command: [
-      ...parseJson<string[]>(candidate.baseCommand),
-      ...(parseJson<{ command?: string[] }>(candidate.selectionPayload).command ?? []),
-    ],
-    checkpointEnabled: candidate.checkpointEnabled,
-  };
-};
+    return {
+      runId: candidate.runId,
+      runProcessId: candidate.runProcessId,
+      runRequestId: candidate.runRequestId,
+      repositorySlug: candidate.repositorySlug,
+      repositoryRootPath: candidate.repositoryRootPath,
+      processSpecKey: candidate.processSpecKey,
+      processSpecDisplayName: candidate.processSpecDisplayName,
+      processSpecKind: candidate.processSpecKind,
+      processKey: candidate.processKey,
+      processLabel: candidate.processLabel,
+      areaKeys: parseJson<{ areaKeys?: string[] }>(candidate.selectionPayload).areaKeys ?? [],
+      command: [
+        ...parseJson<string[]>(candidate.baseCommand),
+        ...(parseJson<{ command?: string[] }>(candidate.selectionPayload).command ?? []),
+      ],
+      checkpointEnabled: candidate.checkpointEnabled,
+    };
+  });
 
 export const heartbeatRunProcess = async (
   db: Kysely<VergeDatabase>,
@@ -1274,8 +1299,10 @@ export const getRepositoryHealth = async (
       displayName: areaState.displayName,
       latestStatus:
         areaState.latestStatus as RepositoryHealth["areaStates"][number]["latestStatus"],
-      freshnessBucket:
-        areaState.freshnessBucket as RepositoryHealth["areaStates"][number]["freshnessBucket"],
+      freshnessBucket: determineFreshnessBucket(
+        areaState.lastSuccessfulObservedAt ?? areaState.lastObservedAt,
+        new Date(),
+      ) as RepositoryHealth["areaStates"][number]["freshnessBucket"],
       lastObservedAt: iso(areaState.lastObservedAt),
       lastSuccessfulObservedAt: iso(areaState.lastSuccessfulObservedAt),
     })),
