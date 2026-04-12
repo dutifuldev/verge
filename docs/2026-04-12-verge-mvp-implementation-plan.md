@@ -53,7 +53,7 @@ If a proposed feature does not materially improve one of those answers, it shoul
 - worker execution with leases and heartbeats
 - process-level evidence for all processes
 - subject-level evidence for cooperative process types that can expose subjects
-- logs and artifacts in S3-compatible storage
+- logs and artifacts in an object storage abstraction
 - live run status in an API and dashboard
 - one safe cache reuse path
 - one cooperative checkpoint/resume path
@@ -78,9 +78,29 @@ This matters for two reasons:
 
 All application code should be written in valid TypeScript. Plain `.js` application files should not be introduced.
 
+## Local Storage Decision
+
+The MVP should keep object storage as an explicit product concept, but local development should not depend on a separately running S3-compatible service.
+
+The initial approach should be:
+
+- define a storage interface for logs, artifacts, and checkpoints
+- use a filesystem-backed adapter for local development and early MVP work
+- preserve object-store-style semantics in the metadata model
+- add a real S3-compatible adapter later without changing the domain model
+
+This keeps Phase 0 simple while still designing the system around durable artifact storage from the start.
+
 ## Repository Layout Decision
 
 The repo should use a small `pnpm` workspace with a strict separation between deployable apps, shared packages, infrastructure assets, and docs.
+
+The package setup should follow the same broad shape as `../openclaw-1`:
+
+- a root workspace package for orchestration scripts and shared config
+- `apps/*` for deployable services
+- `packages/*` for reusable libraries
+- no feature code living at the repository root
 
 The initial layout should be:
 
@@ -102,6 +122,7 @@ The initial layout should be:
   package.json
   pnpm-workspace.yaml
   tsconfig.base.json
+  vitest.config.ts
 ```
 
 Layout rules:
@@ -112,6 +133,8 @@ Layout rules:
 - `infra/k8s/` contains deployment manifests or Helm/Kustomize material when Kubernetes support is added
 - `scripts/` contains small repository automation scripts only
 - the repository root should hold workspace-level config, not feature code
+- the root `package.json` should act as a workspace orchestrator, not as the main application package
+- `pnpm-workspace.yaml` should include `.`, `apps/*`, and `packages/*`
 
 ## Package Responsibilities
 
@@ -161,7 +184,91 @@ The first workspace packages should have these responsibilities:
 - query helpers
 - transaction boundaries for core persistence paths
 
+The first storage adapter should be filesystem-backed for local development. A real S3-compatible adapter should be added after the core persistence and query paths are stable.
+
 This is intentionally small. New packages should only be added when a dependency direction problem appears, not preemptively.
+
+## Pinned Bootstrap Decisions
+
+The following decisions should be treated as fixed for the first implementation pass.
+
+### Workspace Setup
+
+- package manager: `pnpm`
+- workspace shape: root package plus `apps/*` and `packages/*`
+- root package responsibility: shared scripts, dependency policy, and workspace-level config only
+- root workspace file:
+
+```yaml
+packages:
+  - .
+  - apps/*
+  - packages/*
+```
+
+- root TypeScript config: `tsconfig.base.json`
+- root test config: `vitest.config.ts`
+- package naming convention:
+  - `@verge/api`
+  - `@verge/web`
+  - `@verge/worker`
+  - `@verge/contracts`
+  - `@verge/core`
+  - `@verge/db`
+
+### Execution and Runtime
+
+- Phase 0 and Phase 1 worker execution target: local subprocess runner
+- Kubernetes execution remains a later deployment target, not the first bootstrap path
+- initial event ingestion order:
+  1. manual run requests
+  2. GitHub webhook ingestion
+
+### Testing and Validation
+
+- unit and integration test runner: `vitest`
+- docs validation: lightweight frontmatter and link validation, not a heavyweight docs toolchain
+- formatting: `oxfmt`
+- linting: `oxlint`
+
+### Process Splitting
+
+- Verge should provide a generic split model in TypeScript for all projects that use the library
+- each project should define its own concrete task definitions in TypeScript config
+- the default split result should be a small set of named tasks with stable keys
+- extra sharding should happen inside a task only when a task becomes too large
+- the initial split kinds should be:
+  - `none`
+  - `namedTasks`
+  - `fixedShards`
+- the first test split strategy should be named tasks mapped to clear repo areas or projects such as `api`, `web`, `worker`, or `packages`
+- raw glob-heavy task selection should not be the primary long-term API
+
+### Local Infrastructure
+
+- local infrastructure tool: `docker compose`
+- local services for Phase 0: Postgres only
+- artifact and checkpoint storage in local development: filesystem-backed storage adapter
+
+### Database
+
+- query builder and migrations: Kysely in `packages/db`
+- schema changes should be migration-driven from the first commit
+
+### Root Scripts
+
+The root package should expose these workspace-level scripts:
+
+- `dev`
+- `build`
+- `lint`
+- `format`
+- `format:check`
+- `typecheck`
+- `test`
+- `docs:validate`
+
+The first implementation may add narrower scripts such as `dev:api` or `test:watch`, but the commands above should exist from the start.
 
 ### Out of Scope
 
@@ -199,7 +306,7 @@ The first implementation should use a boring control-plane architecture:
 - React + Vite dashboard
 - Fastify API
 - Postgres as source of truth
-- S3-compatible object storage for logs, artifacts, and checkpoints
+- an object storage abstraction for logs, artifacts, and checkpoints
 - worker service for process execution
 - Kubernetes Jobs or Deployments for workers
 - GitHub App integration for webhook ingestion and commit status updates
@@ -236,6 +343,7 @@ The MVP should implement the following core records.
 ### Execution Records
 
 - `runs`
+- `run_tasks`
 - `run_leases`
 - `run_heartbeats`
 - `run_lifecycle_events`
@@ -291,6 +399,17 @@ The table names can change, but the MVP must preserve these responsibilities.
 - current status
 - started/finished timestamps
 - reused-from run id, if any
+
+`run_tasks`
+
+- run id
+- stable task key
+- task label
+- task type
+- status
+- selection payload
+- started/finished timestamps
+- attempt count
 
 `subjects`
 
@@ -355,6 +474,7 @@ Inputs:
 Outputs:
 
 - a list of planned runs
+- the tasks inside each planned run, when the process is split
 - a decision reason for each planned run
 - a reuse decision, if applicable
 
@@ -367,13 +487,50 @@ The initial planning rules should be simple:
 
 Do not attempt probabilistic scheduling in the MVP.
 
+## Process Split Model For MVP
+
+Verge should use a simple runtime model:
+
+process -> run -> task -> observation
+
+A task is one runnable piece of work inside a run.
+
+The library should provide the generic split mechanism. Each project should provide the actual task definitions in TypeScript.
+
+That means:
+
+- Verge defines split kinds and task lifecycle rules
+- a repository defines its own task names and boundaries in TypeScript
+- the planner materializes concrete run tasks from those definitions for each run
+
+For MVP, the supported split kinds should be:
+
+- `none`
+- `namedTasks`
+- `fixedShards`
+
+The preferred default is `namedTasks`.
+
+For tests, that means a project should define a small number of stable tasks such as:
+
+- `api`
+- `web`
+- `worker`
+- `packages`
+
+Each task should map to a clear repo area, package, or test project. Verge should run those tasks separately.
+
+If one task becomes too large, Verge may shard inside that task later. It should not start by inventing complex splits from arbitrary shell commands.
+
+This is important for checkpointing. Checkpoints should record which tasks finished, failed, or remain pending. In practice, that means Verge checkpoints completed tasks, not raw process memory.
+
 ## Worker Protocol For MVP
 
 The worker contract should be explicit and narrow.
 
 Workers must be able to:
 
-- claim a queued planned run using a lease
+- claim queued work using a lease
 - start the process with the resolved execution config
 - send a heartbeat at a fixed interval
 - emit lifecycle events such as `started`, `passed`, `failed`, `timed_out`, `interrupted`
@@ -405,7 +562,8 @@ The initial checkpoint contract should include:
 
 - checkpoint key
 - run id
-- process phase or scenario boundary
+- completed task keys
+- pending task keys
 - serialized payload location in object storage
 - creation timestamp
 - resumable-until timestamp
@@ -431,6 +589,7 @@ The Fastify API should expose a small control-plane surface.
 
 - `GET /run-requests/:id`
 - `GET /runs/:id`
+- `GET /runs/:id/tasks`
 - `GET /runs/:id/events`
 - `POST /workers/claim`
 - `POST /workers/:runId/heartbeat`
@@ -481,6 +640,7 @@ The run detail should show:
 
 - lifecycle timeline
 - heartbeat freshness
+- task status
 - logs and artifacts
 - subject observations, if available
 - checkpoint creation and resume information
@@ -537,14 +697,15 @@ Bootstrap:
 - shared contracts package
 - shared core package
 - Postgres migration setup
-- local dev stack with Postgres and S3-compatible storage
+- local dev stack with Postgres
+- filesystem-backed local artifact and checkpoint storage
 - local self-hosting process definitions for the Verge repo
 
 Exit criteria:
 
 - all apps boot locally
 - migrations run
-- local object storage is reachable
+- local artifact and checkpoint storage is reachable through the storage interface
 - the repo has working `oxlint`, `oxfmt`, and `vite`-based commands
 - the workspace dependency graph is clean, with shared logic living in `packages/` instead of cross-importing between apps
 

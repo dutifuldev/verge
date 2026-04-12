@@ -113,7 +113,7 @@ The main information flow looks like this:
 
 1. A commit, pull request event, manual request, or agent request comes in.
 2. The planner looks at the change, the process metadata, and the current evidence state.
-3. Verge decides which processes should run now.
+3. Verge decides which processes should run now and whether any of them should expand into multiple tasks.
 4. Before starting each process, Verge checks whether it can reuse a past result, resume from a checkpoint, or must start fresh.
 5. While the process runs, the runner streams heartbeats, logs, progress, artifacts, and any new checkpoints.
 6. Verge stores that information and updates the live model of repository health.
@@ -137,6 +137,20 @@ Important rule:
 - reuse or resume at the coarsest level that stays safe
 
 That means Verge may save per-subject data for analysis while only checkpointing at scenario or phase boundaries when resuming work.
+
+## Execution Tasks
+
+A process run may stay whole or may expand into multiple tasks.
+
+A task is one runnable piece of work inside a run.
+
+Examples:
+
+- the whole build
+- the API portion of a test run
+- one smoke-test scenario
+
+This is the level Verge should schedule, retry, and checkpoint.
 
 ## Identity Model
 
@@ -250,8 +264,8 @@ That means:
 For many processes, the right checkpoint boundary will be:
 
 - per subject
+- per task
 - per scenario
-- per shard
 - per phase
 
 depending on what the process can safely expose.
