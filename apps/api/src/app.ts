@@ -29,8 +29,8 @@ import {
   createRun,
   createRunProcesses,
   createRunRequest,
+  deleteEventIngestion,
   getCommitDetail,
-  getEventIngestionByDelivery,
   getProcessSpecsForRepository,
   getPullRequestDetail,
   getRepositoryBySlug,
@@ -46,6 +46,7 @@ import {
   recordObservation,
   recordRunEvent,
   refreshRunStatus,
+  runProcessBelongsToRun,
   syncRepositoryConfiguration,
   type DatabaseConnection,
   findReusableRun,
@@ -77,7 +78,7 @@ const validateGitHubSignature = (
   signatureHeader: string | undefined,
 ): boolean => {
   if (!secret) {
-    return true;
+    return process.env.VERGE_ALLOW_UNVERIFIED_GITHUB_WEBHOOKS === "1";
   }
 
   if (!rawBody || !signatureHeader?.startsWith("sha256=")) {
@@ -288,6 +289,20 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
 
   app.get("/healthz", async () => ({ ok: true }));
 
+  const ensureRunProcessOwnership = async (
+    runId: string,
+    runProcessId: string | undefined,
+  ): Promise<boolean> => {
+    if (!runProcessId) {
+      return true;
+    }
+
+    return runProcessBelongsToRun(context.connection.db, {
+      runId,
+      runProcessId,
+    });
+  };
+
   app.get("/process-specs", async () =>
     listProcessSpecSummaries(context.connection.db, context.repositorySlug),
   );
@@ -328,21 +343,19 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
       return reply.code(401).send({ message: "Invalid webhook signature" });
     }
 
+    if (
+      !process.env.GITHUB_WEBHOOK_SECRET &&
+      process.env.VERGE_ALLOW_UNVERIFIED_GITHUB_WEBHOOKS !== "1"
+    ) {
+      return reply.code(503).send({ message: "GitHub webhook secret is not configured" });
+    }
+
     const repository = await getRepositoryBySlug(context.connection.db, context.repositorySlug);
     if (!repository) {
       return reply.code(404).send({ message: "Repository not found" });
     }
 
-    const existing = await getEventIngestionByDelivery(context.connection.db, {
-      repositoryId: repository.id,
-      source: "github",
-      deliveryId,
-    });
-    if (existing) {
-      return reply.code(202).send({ ok: true, duplicate: true });
-    }
-
-    const eventIngestion = await createEventIngestion(context.connection.db, {
+    const { eventIngestion, inserted } = await createEventIngestion(context.connection.db, {
       repositoryId: repository.id,
       source: "github",
       deliveryId,
@@ -350,36 +363,45 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
       payload: request.body,
     });
 
-    if (eventName === "push") {
-      const payload = githubWebhookPushPayloadSchema.parse(request.body);
-      await createPlannedRuns(context.connection, repository, {
-        trigger: "push",
-        commitSha: payload.after,
-        branch: payload.ref.replace("refs/heads/", ""),
-        changedFiles: collectChangedFilesFromPushPayload(payload),
-        eventIngestionId: eventIngestion.id,
-      });
-      return reply.code(202).send({ ok: true, trigger: "push" });
+    if (!inserted) {
+      return reply.code(202).send({ ok: true, duplicate: true });
     }
 
-    if (eventName === "pull_request") {
-      const payload = githubWebhookPullRequestPayloadSchema.parse(request.body);
-      if (!["opened", "reopened", "synchronize"].includes(payload.action)) {
-        return reply.code(202).send({ ok: true, ignored: true, action: payload.action });
+    try {
+      if (eventName === "push") {
+        const payload = githubWebhookPushPayloadSchema.parse(request.body);
+        await createPlannedRuns(context.connection, repository, {
+          trigger: "push",
+          commitSha: payload.after,
+          branch: payload.ref.replace("refs/heads/", ""),
+          changedFiles: collectChangedFilesFromPushPayload(payload),
+          eventIngestionId: eventIngestion.id,
+        });
+        return reply.code(202).send({ ok: true, trigger: "push" });
       }
 
-      await createPlannedRuns(context.connection, repository, {
-        trigger: "pull_request",
-        commitSha: payload.pull_request.head.sha,
-        branch: payload.pull_request.head.ref,
-        changedFiles: [],
-        pullRequestNumber: payload.number,
-        eventIngestionId: eventIngestion.id,
-      });
-      return reply.code(202).send({ ok: true, trigger: "pull_request" });
-    }
+      if (eventName === "pull_request") {
+        const payload = githubWebhookPullRequestPayloadSchema.parse(request.body);
+        if (!["opened", "reopened", "synchronize"].includes(payload.action)) {
+          return reply.code(202).send({ ok: true, ignored: true, action: payload.action });
+        }
 
-    return reply.code(202).send({ ok: true, ignored: true, eventName });
+        await createPlannedRuns(context.connection, repository, {
+          trigger: "pull_request",
+          commitSha: payload.pull_request.head.sha,
+          branch: payload.pull_request.head.ref,
+          changedFiles: [],
+          pullRequestNumber: payload.number,
+          eventIngestionId: eventIngestion.id,
+        });
+        return reply.code(202).send({ ok: true, trigger: "pull_request" });
+      }
+
+      return reply.code(202).send({ ok: true, ignored: true, eventName });
+    } catch (error) {
+      await deleteEventIngestion(context.connection.db, eventIngestion.id);
+      throw error;
+    }
   });
 
   app.get("/run-requests/:id", async (request) =>
@@ -408,9 +430,12 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
     };
   });
 
-  app.post("/workers/:runId/heartbeat", async (request) => {
+  app.post("/workers/:runId/heartbeat", async (request, reply) => {
     const params = request.params as { runId: string };
     const input = workerHeartbeatInputSchema.parse(request.body);
+    if (!(await ensureRunProcessOwnership(params.runId, input.runProcessId))) {
+      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    }
     await heartbeatRunProcess(context.connection.db, {
       runProcessId: input.runProcessId,
       workerId: input.workerId,
@@ -418,24 +443,33 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
     return { runId: params.runId, ok: true };
   });
 
-  app.post("/workers/:runId/events", async (request) => {
+  app.post("/workers/:runId/events", async (request, reply) => {
     const params = request.params as { runId: string };
     const input = appendRunEventInputSchema.parse(request.body);
+    if (!(await ensureRunProcessOwnership(params.runId, input.runProcessId))) {
+      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    }
     await recordRunEvent(context.connection.db, params.runId, input);
     return { ok: true };
   });
 
-  app.post("/workers/:runId/observations", async (request) => {
+  app.post("/workers/:runId/observations", async (request, reply) => {
     const params = request.params as { runId: string };
     const input = recordObservationInputSchema.parse(request.body);
+    if (!(await ensureRunProcessOwnership(params.runId, input.runProcessId))) {
+      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    }
     await recordObservation(context.connection.db, params.runId, input);
     await refreshRunStatus(context.connection.db, params.runId);
     return { ok: true };
   });
 
-  app.post("/workers/:runId/artifacts", async (request) => {
+  app.post("/workers/:runId/artifacts", async (request, reply) => {
     const params = request.params as { runId: string };
     const input = recordArtifactInputSchema.parse(request.body);
+    if (!(await ensureRunProcessOwnership(params.runId, input.runProcessId))) {
+      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    }
     await recordArtifact(context.connection.db, params.runId, input);
     return { ok: true };
   });

@@ -19,6 +19,7 @@ export const statusTone = (status: string): string => {
     case "fresh":
       return "good";
     case "failed":
+    case "interrupted":
     case "stale":
       return "bad";
     case "running":

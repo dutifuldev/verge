@@ -16,6 +16,7 @@ export const runProcessStatusSchema = z.enum([
   "running",
   "passed",
   "failed",
+  "interrupted",
   "reused",
   "skipped",
 ]);

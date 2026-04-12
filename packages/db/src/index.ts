@@ -479,7 +479,10 @@ export const createEventIngestion = async (
     eventName: string;
     payload: unknown;
   },
-): Promise<Selectable<EventIngestionsTable>> => {
+): Promise<{
+  eventIngestion: Selectable<EventIngestionsTable>;
+  inserted: boolean;
+}> => {
   const inserted = await db
     .insertInto("event_ingestions")
     .values({
@@ -495,7 +498,10 @@ export const createEventIngestion = async (
     .executeTakeFirst();
 
   if (inserted) {
-    return inserted;
+    return {
+      eventIngestion: inserted,
+      inserted: true,
+    };
   }
 
   const existing = await getEventIngestionByDelivery(db, {
@@ -508,7 +514,34 @@ export const createEventIngestion = async (
     throw new Error("Event ingestion lookup failed");
   }
 
-  return existing;
+  return {
+    eventIngestion: existing,
+    inserted: false,
+  };
+};
+
+export const deleteEventIngestion = async (
+  db: Kysely<VergeDatabase>,
+  eventIngestionId: string,
+): Promise<void> => {
+  await db.deleteFrom("event_ingestions").where("id", "=", eventIngestionId).execute();
+};
+
+export const runProcessBelongsToRun = async (
+  db: Kysely<VergeDatabase>,
+  input: {
+    runId: string;
+    runProcessId: string;
+  },
+): Promise<boolean> => {
+  const row = await db
+    .selectFrom("run_processes")
+    .select("id")
+    .where("id", "=", input.runProcessId)
+    .where("run_id", "=", input.runId)
+    .executeTakeFirst();
+
+  return Boolean(row);
 };
 
 export const createRunRequest = async (
@@ -1029,6 +1062,9 @@ export const refreshRunStatus = async (db: Kysely<VergeDatabase>, runId: string)
   if (statuses.some((candidate) => candidate === "failed")) {
     status = "failed";
     finishedAt = new Date();
+  } else if (statuses.some((candidate) => candidate === "interrupted")) {
+    status = "interrupted";
+    finishedAt = new Date();
   } else if (statuses.some((candidate) => candidate === "running" || candidate === "claimed")) {
     status = "running";
   } else if (statuses.every((candidate) => candidate === "reused")) {
@@ -1061,7 +1097,9 @@ export const refreshRunStatus = async (db: Kysely<VergeDatabase>, runId: string)
       .where("run_request_id", "=", request.run_request_id)
       .execute();
 
-    const requestStatus = runs.some((row) => row.status === "failed")
+    const requestStatus = runs.some(
+      (row) => row.status === "failed" || row.status === "interrupted",
+    )
       ? "failed"
       : runs.every((row) => ["passed", "reused"].includes(row.status))
         ? "completed"
