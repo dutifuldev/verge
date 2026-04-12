@@ -78,6 +78,19 @@ This matters for two reasons:
 
 All application code should be written in valid TypeScript. Plain `.js` application files should not be introduced.
 
+## UI Design Constraint
+
+UI and visual design work should use the Impeccable skill set from https://impeccable.style/ as the default design guidance layer.
+
+This should be used for:
+
+- page and dashboard design
+- typography and spacing decisions
+- layout refinement
+- visual polish and anti-pattern review
+
+For Verge, this means frontend implementation should not stop at functional correctness. UI work should be reviewed and refined through the Impeccable workflow before it is treated as complete.
+
 ## Local Storage Decision
 
 The MVP should keep object storage as an explicit product concept, but local development should not depend on a separately running S3-compatible service.
