@@ -1,0 +1,42 @@
+{
+  "name": "verge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,worker,web -c green,blue,magenta \"pnpm dev:api\" \"pnpm dev:worker\" \"pnpm dev:web\"",
+    "dev:api": "pnpm --filter @verge/api dev",
+    "dev:web": "pnpm --filter @verge/web dev",
+    "dev:worker": "pnpm --filter @verge/worker dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm exec oxlint . --deny-warnings",
+    "format": "pnpm exec oxfmt --write .",
+    "format:check": "pnpm exec oxfmt --check .",
+    "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
+    "test": "pnpm exec vitest run",
+    "test:integration": "bash scripts/test-integration.sh",
+    "test:smoke": "bash scripts/self-host-smoke.sh",
+    "docs:validate": "tsx scripts/docs-validate.ts",
+    "db:up": "docker compose -f infra/local/docker-compose.yml up -d",
+    "db:down": "docker compose -f infra/local/docker-compose.yml down -v",
+    "db:migrate": "pnpm --filter @verge/db migrate",
+    "db:reset": "pnpm db:down && pnpm db:up && pnpm db:migrate"
+  },
+  "devDependencies": {
+    "@types/node": "^22.17.0",
+    "@types/pg": "^8.15.4",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.0",
+    "jsdom": "^26.1.0",
+    "oxfmt": "^0.18.0",
+    "oxlint": "^1.12.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.2",
+    "vitest": "^3.2.4"
+  },
+  "packageManager": "pnpm@10.32.1"
+}

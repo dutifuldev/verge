@@ -1,0 +1,21 @@
+{
+  "name": "@verge/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@verge/contracts": "workspace:*",
+    "@verge/core": "workspace:*",
+    "@verge/db": "workspace:*",
+    "fastify": "^5.4.0",
+    "fastify-raw-body": "^5.0.0"
+  }
+}

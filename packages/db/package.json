@@ -1,0 +1,19 @@
+{
+  "name": "@verge/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts src/migrate.ts --format esm --dts",
+    "dev": "tsup src/index.ts src/migrate.ts --watch --format esm --dts",
+    "migrate": "tsx src/migrate.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@verge/core": "workspace:*",
+    "kysely": "^0.28.2",
+    "pg": "^8.16.3"
+  }
+}
