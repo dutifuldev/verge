@@ -47,6 +47,7 @@ import {
   recordRunEvent,
   refreshRunStatus,
   runProcessBelongsToRun,
+  runProcessLeaseIsActive,
   syncRepositoryConfiguration,
   type DatabaseConnection,
   findReusableRun,
@@ -278,7 +279,22 @@ const sendSse = (reply: {
 
 export const createApiApp = async (context: ApiContext): Promise<FastifyInstance> => {
   const app = Fastify({ logger: true });
-  await app.register(cors, { origin: true });
+  const allowedOrigins = (
+    process.env.VERGE_ALLOWED_ORIGINS ?? "http://127.0.0.1:5173,http://localhost:5173"
+  )
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  await app.register(cors, {
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("Origin not allowed"), false);
+    },
+  });
   await app.register(fastifyRawBody, {
     field: "rawBody",
     global: false,
@@ -289,17 +305,32 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
 
   app.get("/healthz", async () => ({ ok: true }));
 
-  const ensureRunProcessOwnership = async (
+  const ensureRunProcessMutationAccess = async (
     runId: string,
     runProcessId: string | undefined,
+    workerId: string | undefined,
   ): Promise<boolean> => {
     if (!runProcessId) {
       return true;
     }
 
-    return runProcessBelongsToRun(context.connection.db, {
+    if (
+      !(await runProcessBelongsToRun(context.connection.db, {
+        runId,
+        runProcessId,
+      }))
+    ) {
+      return false;
+    }
+
+    if (!workerId) {
+      return false;
+    }
+
+    return runProcessLeaseIsActive(context.connection.db, {
       runId,
       runProcessId,
+      workerId,
     });
   };
 
@@ -339,15 +370,15 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
       return reply.code(400).send({ message: "Missing GitHub delivery metadata" });
     }
 
-    if (!validateGitHubSignature(process.env.GITHUB_WEBHOOK_SECRET, rawBody, signature)) {
-      return reply.code(401).send({ message: "Invalid webhook signature" });
-    }
-
     if (
       !process.env.GITHUB_WEBHOOK_SECRET &&
       process.env.VERGE_ALLOW_UNVERIFIED_GITHUB_WEBHOOKS !== "1"
     ) {
       return reply.code(503).send({ message: "GitHub webhook secret is not configured" });
+    }
+
+    if (!validateGitHubSignature(process.env.GITHUB_WEBHOOK_SECRET, rawBody, signature)) {
+      return reply.code(401).send({ message: "Invalid webhook signature" });
     }
 
     const repository = await getRepositoryBySlug(context.connection.db, context.repositorySlug);
@@ -433,7 +464,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
   app.post("/workers/:runId/heartbeat", async (request, reply) => {
     const params = request.params as { runId: string };
     const input = workerHeartbeatInputSchema.parse(request.body);
-    if (!(await ensureRunProcessOwnership(params.runId, input.runProcessId))) {
+    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
       return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
     }
     await heartbeatRunProcess(context.connection.db, {
@@ -446,7 +477,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
   app.post("/workers/:runId/events", async (request, reply) => {
     const params = request.params as { runId: string };
     const input = appendRunEventInputSchema.parse(request.body);
-    if (!(await ensureRunProcessOwnership(params.runId, input.runProcessId))) {
+    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
       return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
     }
     await recordRunEvent(context.connection.db, params.runId, input);
@@ -456,7 +487,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
   app.post("/workers/:runId/observations", async (request, reply) => {
     const params = request.params as { runId: string };
     const input = recordObservationInputSchema.parse(request.body);
-    if (!(await ensureRunProcessOwnership(params.runId, input.runProcessId))) {
+    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
       return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
     }
     await recordObservation(context.connection.db, params.runId, input);
@@ -467,7 +498,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
   app.post("/workers/:runId/artifacts", async (request, reply) => {
     const params = request.params as { runId: string };
     const input = recordArtifactInputSchema.parse(request.body);
-    if (!(await ensureRunProcessOwnership(params.runId, input.runProcessId))) {
+    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
       return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
     }
     await recordArtifact(context.connection.db, params.runId, input);

@@ -89,6 +89,7 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
     });
 
     await postJson(`/workers/${assignment.runId}/artifacts`, {
+      workerId,
       runProcessId: assignment.runProcessId,
       artifactKey: "log",
       storagePath: logArtifact.storagePath,
@@ -103,6 +104,7 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
 
     for (const areaKey of areaKeys) {
       await postJson(`/workers/${assignment.runId}/observations`, {
+        workerId,
         runProcessId: assignment.runProcessId,
         processKey: assignment.processKey,
         areaKey,
@@ -149,6 +151,7 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
       });
 
       await postJson(`/workers/${assignment.runId}/checkpoints`, {
+        workerId,
         completedProcessKeys,
         pendingProcessKeys,
         storagePath: checkpointArtifact.storagePath,

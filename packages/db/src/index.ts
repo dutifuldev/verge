@@ -399,6 +399,13 @@ export const syncRepositoryConfiguration = async (
     }
   }
 
+  const processSpecKeys = processSpecs.map((processSpec) => processSpec.key);
+  let deleteQuery = db.deleteFrom("process_specs").where("repository_id", "=", repositoryRecord.id);
+  if (processSpecKeys.length > 0) {
+    deleteQuery = deleteQuery.where("key", "not in", processSpecKeys);
+  }
+  await deleteQuery.execute();
+
   return repositoryRecord;
 };
 
@@ -539,6 +546,28 @@ export const runProcessBelongsToRun = async (
     .select("id")
     .where("id", "=", input.runProcessId)
     .where("run_id", "=", input.runId)
+    .executeTakeFirst();
+
+  return Boolean(row);
+};
+
+export const runProcessLeaseIsActive = async (
+  db: Kysely<VergeDatabase>,
+  input: {
+    runId: string;
+    runProcessId: string;
+    workerId: string;
+    now?: Date;
+  },
+): Promise<boolean> => {
+  const row = await db
+    .selectFrom("run_processes")
+    .select("id")
+    .where("id", "=", input.runProcessId)
+    .where("run_id", "=", input.runId)
+    .where("claimed_by", "=", input.workerId)
+    .where("lease_expires_at", ">", input.now ?? new Date())
+    .where("status", "in", ["claimed", "running"])
     .executeTakeFirst();
 
   return Boolean(row);

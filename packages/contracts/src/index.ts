@@ -151,6 +151,7 @@ export const appendRunEventInputSchema = z.object({
 });
 
 export const recordObservationInputSchema = z.object({
+  workerId: z.string().min(1).optional(),
   runProcessId: z.string().uuid().optional(),
   processKey: z.string().optional(),
   areaKey: z.string().optional(),
@@ -160,6 +161,7 @@ export const recordObservationInputSchema = z.object({
 });
 
 export const recordArtifactInputSchema = z.object({
+  workerId: z.string().min(1).optional(),
   runProcessId: z.string().uuid().optional(),
   artifactKey: z.string().min(1),
   storagePath: z.string().min(1),
@@ -168,6 +170,7 @@ export const recordArtifactInputSchema = z.object({
 });
 
 export const recordCheckpointInputSchema = z.object({
+  workerId: z.string().min(1).optional(),
   completedProcessKeys: z.array(z.string()).default([]),
   pendingProcessKeys: z.array(z.string()).default([]),
   storagePath: z.string().optional(),
