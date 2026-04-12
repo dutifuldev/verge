@@ -29,7 +29,6 @@ import {
   createRun,
   createRunProcesses,
   createRunRequest,
-  deleteEventIngestion,
   getCommitDetail,
   getProcessSpecsForRepository,
   getPullRequestDetail,
@@ -50,6 +49,7 @@ import {
   runProcessLeaseIsActive,
   syncRepositoryConfiguration,
   type DatabaseConnection,
+  type DatabaseExecutor,
   findReusableRun,
   findLatestCheckpoint,
 } from "@verge/db";
@@ -109,7 +109,7 @@ const parseStringArray = (value: unknown): string[] => {
 };
 
 const createPlannedRuns = async (
-  connection: DatabaseConnection,
+  db: DatabaseExecutor,
   repository: {
     id: string;
     slug: string;
@@ -129,10 +129,10 @@ const createPlannedRuns = async (
   runRequestId: string;
   runIds: string[];
 }> => {
-  const processSpecs = await getProcessSpecsForRepository(connection.db, repository.id);
+  const processSpecs = await getProcessSpecsForRepository(db, repository.id);
   const repositoryDefinition = getSelfHostedRepositoryDefinition(repository.root_path);
 
-  const runRequest = await createRunRequest(connection.db, {
+  const runRequest = await createRunRequest(db, {
     repositoryId: repository.id,
     trigger: input.trigger,
     commitSha: input.commitSha,
@@ -168,13 +168,13 @@ const createPlannedRuns = async (
     }
 
     if (plan.processSpec.reuseEnabled) {
-      const reusableRun = await findReusableRun(connection.db, {
+      const reusableRun = await findReusableRun(db, {
         processSpecId: specRow.id,
         fingerprint: plan.fingerprint,
       });
 
       if (reusableRun) {
-        const reusedRun = await createRun(connection.db, {
+        const reusedRun = await createRun(db, {
           runRequestId: runRequest.id,
           processSpecId: specRow.id,
           fingerprint: plan.fingerprint,
@@ -182,18 +182,18 @@ const createPlannedRuns = async (
           planReason: `reused prior successful run ${reusableRun.id}`,
           reusedFromRunId: reusableRun.id,
         });
-        await cloneRunForReuse(connection.db, {
+        await cloneRunForReuse(db, {
           sourceRunId: reusableRun.id,
           newRunId: reusedRun.id,
         });
-        await refreshRunStatus(connection.db, reusedRun.id);
+        await refreshRunStatus(db, reusedRun.id);
         createdRunIds.push(reusedRun.id);
         continue;
       }
     }
 
     if (input.resumeFromCheckpoint && plan.processSpec.checkpointEnabled) {
-      const checkpoint = await findLatestCheckpoint(connection.db, {
+      const checkpoint = await findLatestCheckpoint(db, {
         processSpecId: specRow.id,
         fingerprint: plan.fingerprint,
       });
@@ -202,7 +202,7 @@ const createPlannedRuns = async (
         const completedProcessKeys = new Set(parseStringArray(checkpoint.completed_process_keys));
         const pending = plan.processes.filter((process) => !completedProcessKeys.has(process.key));
 
-        const resumedRun = await createRun(connection.db, {
+        const resumedRun = await createRun(db, {
           runRequestId: runRequest.id,
           processSpecId: specRow.id,
           fingerprint: plan.fingerprint,
@@ -211,13 +211,13 @@ const createPlannedRuns = async (
           checkpointSourceRunId: checkpoint.run_id,
         });
 
-        await cloneCompletedProcessesFromCheckpoint(connection.db, {
+        await cloneCompletedProcessesFromCheckpoint(db, {
           sourceRunId: checkpoint.run_id,
           newRunId: resumedRun.id,
           completedProcessKeys: [...completedProcessKeys],
         });
 
-        await createRunProcesses(connection.db, {
+        await createRunProcesses(db, {
           runId: resumedRun.id,
           processes: pending.map((process) => ({
             processKey: process.key,
@@ -230,20 +230,20 @@ const createPlannedRuns = async (
           })),
         });
 
-        await refreshRunStatus(connection.db, resumedRun.id);
+        await refreshRunStatus(db, resumedRun.id);
         createdRunIds.push(resumedRun.id);
         continue;
       }
     }
 
-    const run = await createRun(connection.db, {
+    const run = await createRun(db, {
       runRequestId: runRequest.id,
       processSpecId: specRow.id,
       fingerprint: plan.fingerprint,
       status: "queued",
       planReason: plan.planReason,
     });
-    await createRunProcesses(connection.db, {
+    await createRunProcesses(db, {
       runId: run.id,
       processes: plan.processes.map((process) => ({
         processKey: process.key,
@@ -255,7 +255,7 @@ const createPlannedRuns = async (
         },
       })),
     });
-    await refreshRunStatus(connection.db, run.id);
+    await refreshRunStatus(db, run.id);
     createdRunIds.push(run.id);
   }
 
@@ -346,7 +346,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
       return reply.code(404).send({ message: "Repository not found" });
     }
 
-    return createPlannedRuns(context.connection, repository, {
+    return createPlannedRuns(context.connection.db, repository, {
       trigger: "manual",
       commitSha: input.commitSha,
       ...(input.changedFiles ? { changedFiles: input.changedFiles } : {}),
@@ -386,38 +386,42 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
       return reply.code(404).send({ message: "Repository not found" });
     }
 
-    const { eventIngestion, inserted } = await createEventIngestion(context.connection.db, {
-      repositoryId: repository.id,
-      source: "github",
-      deliveryId,
-      eventName,
-      payload: request.body,
-    });
+    const result = await context.connection.db.transaction().execute(async (trx) => {
+      const { eventIngestion, inserted } = await createEventIngestion(trx, {
+        repositoryId: repository.id,
+        source: "github",
+        deliveryId,
+        eventName,
+        payload: request.body,
+      });
 
-    if (!inserted) {
-      return reply.code(202).send({ ok: true, duplicate: true });
-    }
+      if (!inserted) {
+        return { duplicate: true } as const;
+      }
 
-    try {
       if (eventName === "push") {
         const payload = githubWebhookPushPayloadSchema.parse(request.body);
-        await createPlannedRuns(context.connection, repository, {
+        await createPlannedRuns(trx, repository, {
           trigger: "push",
           commitSha: payload.after,
           branch: payload.ref.replace("refs/heads/", ""),
           changedFiles: collectChangedFilesFromPushPayload(payload),
           eventIngestionId: eventIngestion.id,
         });
-        return reply.code(202).send({ ok: true, trigger: "push" });
+        return { duplicate: false, trigger: "push" } as const;
       }
 
       if (eventName === "pull_request") {
         const payload = githubWebhookPullRequestPayloadSchema.parse(request.body);
         if (!["opened", "reopened", "synchronize"].includes(payload.action)) {
-          return reply.code(202).send({ ok: true, ignored: true, action: payload.action });
+          return {
+            duplicate: false,
+            ignored: true,
+            action: payload.action,
+          } as const;
         }
 
-        await createPlannedRuns(context.connection, repository, {
+        await createPlannedRuns(trx, repository, {
           trigger: "pull_request",
           commitSha: payload.pull_request.head.sha,
           branch: payload.pull_request.head.ref,
@@ -425,14 +429,17 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
           pullRequestNumber: payload.number,
           eventIngestionId: eventIngestion.id,
         });
-        return reply.code(202).send({ ok: true, trigger: "pull_request" });
+        return { duplicate: false, trigger: "pull_request" } as const;
       }
 
-      return reply.code(202).send({ ok: true, ignored: true, eventName });
-    } catch (error) {
-      await deleteEventIngestion(context.connection.db, eventIngestion.id);
-      throw error;
+      return { duplicate: false, ignored: true, eventName } as const;
+    });
+
+    if (result.duplicate) {
+      return reply.code(202).send({ ok: true, duplicate: true });
     }
+
+    return reply.code(202).send({ ok: true, ...result });
   });
 
   app.get("/run-requests/:id", async (request) =>
@@ -553,9 +560,17 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
   app.get("/streams/runs/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     sendSse(reply);
-    const interval = setInterval(async () => {
-      const detail = await getRunDetail(context.connection.db, id);
-      reply.raw.write(`data: ${JSON.stringify(detail)}\n\n`);
+    const interval = setInterval(() => {
+      void (async () => {
+        try {
+          const detail = await getRunDetail(context.connection.db, id);
+          reply.raw.write(`data: ${JSON.stringify(detail)}\n\n`);
+        } catch (error) {
+          clearInterval(interval);
+          app.log.error(error, `Run stream failed for ${id}`);
+          reply.raw.end();
+        }
+      })();
     }, 2000);
 
     request.raw.on("close", () => clearInterval(interval));
@@ -565,9 +580,17 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
   app.get("/streams/repositories/:repo/health", async (request, reply) => {
     const { repo } = request.params as { repo: string };
     sendSse(reply);
-    const interval = setInterval(async () => {
-      const detail = await getRepositoryHealth(context.connection.db, repo);
-      reply.raw.write(`data: ${JSON.stringify(detail)}\n\n`);
+    const interval = setInterval(() => {
+      void (async () => {
+        try {
+          const detail = await getRepositoryHealth(context.connection.db, repo);
+          reply.raw.write(`data: ${JSON.stringify(detail)}\n\n`);
+        } catch (error) {
+          clearInterval(interval);
+          app.log.error(error, `Repository health stream failed for ${repo}`);
+          reply.raw.end();
+        }
+      })();
     }, 2000);
 
     request.raw.on("close", () => clearInterval(interval));

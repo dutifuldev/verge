@@ -47,6 +47,12 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
     void postJson(`/workers/${assignment.runId}/heartbeat`, {
       workerId,
       runProcessId: assignment.runProcessId,
+    }).catch((error: unknown) => {
+      console.error(
+        error instanceof Error
+          ? `Failed heartbeat for ${assignment.processKey}: ${error.stack ?? error.message}`
+          : error,
+      );
     });
   }, 5000);
 
@@ -120,29 +126,26 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
       });
     }
 
-    await postJson(`/workers/${assignment.runId}/events`, {
-      workerId,
-      runProcessId: assignment.runProcessId,
-      kind: exitCode === 0 ? "passed" : "failed",
-      message: `${assignment.processLabel} ${exitCode === 0 ? "passed" : "failed"}`,
-      payload: {
-        exitCode,
-      },
-    });
-
     if (assignment.checkpointEnabled) {
       const runDetail = await getJson<RunDetail>(`/runs/${assignment.runId}`);
-      const completedProcessKeys = runDetail.processes
-        .filter((process) => ["passed", "reused", "skipped"].includes(process.status))
-        .map((process) => process.processKey);
+      const completedProcessKeys = new Set(
+        runDetail.processes
+          .filter((process) => ["passed", "reused", "skipped"].includes(process.status))
+          .map((process) => process.processKey),
+      );
+      if (exitCode === 0) {
+        completedProcessKeys.add(assignment.processKey);
+      }
+
       const pendingProcessKeys = runDetail.processes
         .filter((process) => ["queued", "claimed", "running"].includes(process.status))
+        .filter((process) => (exitCode === 0 ? process.processKey !== assignment.processKey : true))
         .map((process) => process.processKey);
       const checkpointArtifact = await storage.writeText({
         relativePath: path.join(artifactDir, `${assignment.processKey}-checkpoint.json`),
         content: JSON.stringify(
           {
-            completedProcessKeys,
+            completedProcessKeys: [...completedProcessKeys],
             pendingProcessKeys,
           },
           null,
@@ -153,12 +156,22 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
       await postJson(`/workers/${assignment.runId}/checkpoints`, {
         workerId,
         runProcessId: assignment.runProcessId,
-        completedProcessKeys,
+        completedProcessKeys: [...completedProcessKeys],
         pendingProcessKeys,
         storagePath: checkpointArtifact.storagePath,
         resumableUntil: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       });
     }
+
+    await postJson(`/workers/${assignment.runId}/events`, {
+      workerId,
+      runProcessId: assignment.runProcessId,
+      kind: exitCode === 0 ? "passed" : "failed",
+      message: `${assignment.processLabel} ${exitCode === 0 ? "passed" : "failed"}`,
+      payload: {
+        exitCode,
+      },
+    });
 
     return exitCode;
   } finally {

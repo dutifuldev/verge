@@ -202,6 +202,8 @@ export type DatabaseConnection = {
   pool: pg.Pool;
 };
 
+export type DatabaseExecutor = Kysely<VergeDatabase>;
+
 export const DEFAULT_DATABASE_URL = "postgres://verge:verge@127.0.0.1:54329/verge";
 
 export const createDatabaseConnection = (
