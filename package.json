@@ -14,6 +14,8 @@
     "format:check": "pnpm exec oxfmt --check .",
     "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
     "test": "pnpm exec vitest run",
+    "test:integration": "bash scripts/test-integration.sh",
+    "test:smoke": "bash scripts/self-host-smoke.sh",
     "docs:validate": "tsx scripts/docs-validate.ts",
     "db:up": "docker compose -f infra/local/docker-compose.yml up -d",
     "db:down": "docker compose -f infra/local/docker-compose.yml down -v",
