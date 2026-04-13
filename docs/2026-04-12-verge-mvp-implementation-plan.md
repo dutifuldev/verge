@@ -26,8 +26,10 @@ In plain terms:
 
 - a `run` is one commit-level, PR-level, or manual evaluation
 - a `step` is a major check inside a run, like `build`, `test`, or `lint`
-- a `process` is a smaller concrete computation inside a step, like `api`, `web`, or a shard
+- a `process` is the smallest meaningful thing Verge tracks as its own result
 - an `observation` is the recorded result
+
+A process should not be an execution chunk, group, or shard. It should be the real unit of evidence, such as one test, one lint target, one build target, or one document check.
 
 Some current implementation details still use older internal names such as `run_request`, `run`, and `process_spec`. This plan keeps those names where it is talking about current tables or endpoints, but the public product model above is the one Verge should present.
 
@@ -265,13 +267,11 @@ packages:
 
 - Verge should provide a generic step and process materialization model in TypeScript for all projects that use the library
 - each project should define its own concrete processes in TypeScript config
-- the default result should be a small set of named processes with stable keys
-- finer sharding should happen inside a process only when a process becomes too large
+- each process should map to the smallest meaningful tracked unit for that step
 - the initial materialization kinds should be:
   - `singleProcess`
   - `namedProcesses`
-  - `fixedShards`
-- the first test materialization strategy should be named processes mapped to clear repo areas or projects such as `api`, `web`, `worker`, or `packages`
+- process metadata may include a file path when that exists, but file paths should not be required for every process
 - raw glob-heavy process selection should not be the primary long-term API
 
 ### Local Infrastructure
@@ -540,20 +540,10 @@ For MVP, the supported materialization kinds should be:
 
 - `singleProcess`
 - `namedProcesses`
-- `fixedShards`
 
 The preferred default is `namedProcesses`.
 
-For tests, that means a project should define a small number of stable processes such as:
-
-- `api`
-- `web`
-- `worker`
-- `packages`
-
-Each process should map to a clear repo area, package, or test project. Verge should run those processes separately.
-
-If one process becomes too large, Verge may shard inside that process later. It should not start by inventing complex splits from arbitrary shell commands.
+For tests, that means a project should define processes as the real tests Verge wants to track, not repo-level groupings. For other steps, the same rule applies: define the smallest meaningful tracked process for that step, such as one lint target, one build target, or one document check.
 
 This is important for checkpointing. Checkpoints should record which processes finished, failed, or remain pending. In practice, that means Verge checkpoints completed processes, not raw process memory.
 
@@ -673,12 +663,17 @@ The commit or pull request detail should show:
 
 The run detail should show:
 
-- lifecycle timeline
-- heartbeat freshness
+- top-level run summary
+- step list
+- links into step detail
+
+The step detail should show:
+
 - process status
 - logs and artifacts
 - process observations, if available
 - checkpoint creation and resume information
+- search, filtering, or pagination when there are many processes
 
 ## Self-Hosting Requirement
 

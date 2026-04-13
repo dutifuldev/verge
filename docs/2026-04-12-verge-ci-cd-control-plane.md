@@ -77,7 +77,7 @@ A process is one standalone computation that reveals something about the state o
 Examples:
 
 - one test case
-- one stable test group such as `api`
+- one lint target
 - one build target
 - one smoke-test scenario
 - one benchmark case
@@ -85,6 +85,11 @@ Examples:
 - one agent investigation unit
 
 Higher-level things like `test`, `build`, or `docs:validate` are better thought of as steps. A process is the concrete computation inside a step that gets a stable identity and can actually run.
+
+Important rule:
+
+- a process is the smallest meaningful thing Verge tracks as its own result
+- a process is not an execution chunk, shard, or grouping convenience
 
 ## What Counts As Evidence
 
@@ -160,10 +165,11 @@ A process is one standalone computation inside a step with a stable identity.
 
 Examples of processes:
 
-- the `api` part of the `test` step
+- one individual test
+- one lint target
 - one smoke-test scenario
 - one build target
-- one single test case
+- one document check
 
 Runs collect steps. Steps collect processes. Processes are the smallest concrete executions Verge should identify, schedule, retry, and checkpoint.
 
@@ -176,7 +182,8 @@ The core terms should be:
 - run: one commit-level, PR-level, or manual evaluation
 - step: a major check inside a run
 - process: one standalone computation with a stable ID
-- process ID: the stable identity of that process
+- process ID: the unique id of one concrete process record in one run
+- process key: the stable identity of that process across runs
 - observation: one recorded result for that process under a particular execution scope
 
 Examples of processes:
@@ -189,13 +196,13 @@ Examples of processes:
 - a release validation scenario
 - an agent investigation unit
 
-## Process ID Strategy
+## Process Identity Strategy
 
 Verge should use a hybrid identity model.
 
 Identity should be resolved in this order:
 
-1. explicit stable process ID, if present
+1. explicit stable process key, if present
 2. derived process identity, if no explicit ID exists
 3. heuristic continuity matching for history repair, not as the primary identity
 
@@ -203,7 +210,7 @@ This means Verge can work immediately without requiring manual IDs everywhere, w
 
 ## Derived Identity
 
-When no explicit process ID exists, Verge should derive one from the structure of the process output.
+When no explicit process key exists, Verge should derive one from the structure of the process output.
 
 The derived identity should usually include:
 
@@ -225,7 +232,7 @@ The canonical identity should be stored as:
 
 Process identity and execution scope should stay separate.
 
-The process ID answers:
+The process key answers:
 
 - what logical thing is this?
 
@@ -241,7 +248,7 @@ Execution scope should include things like:
 - lockfile or dependency hash
 - process config hash
 
-Commit SHA belongs in the execution scope, not in the process identity itself.
+Commit SHA belongs in the execution scope, not in the process key itself.
 
 ## Recording Status
 

@@ -20,7 +20,7 @@ This is deliberately analogous to CI systems people already know:
 
 - a `run` is the whole evaluation for one commit, pull request event, or manual trigger
 - a `step` is a major check inside that run, like `build`, `test`, or `lint`
-- a `process` is a smaller unit inside a step, like `api`, `web`, `worker`, `packages`, or a shard
+- a `process` is the smallest meaningful thing Verge tracks inside a step
 - an `observation` is the result recorded from the work
 
 ## Naming Note
@@ -31,7 +31,7 @@ For product and concept docs, the intended model should be:
 
 - `run` = the commit-level evaluation
 - `step` = a major check inside that run
-- `process` = a smaller execution unit inside a step
+- `process` = the smallest tracked unit inside a step
 
 ## The Main Objects
 
@@ -99,21 +99,24 @@ A process is one concrete unit of work inside a step.
 
 Plainly:
 
-- this is the smaller thing Verge can schedule, retry, checkpoint, and observe directly
-- if a step is `test`, the processes might be `api`, `web`, `worker`, and `packages`
+- this is the smallest meaningful thing Verge wants to track as its own result
+- this is the unit Verge can schedule, retry, checkpoint, and observe directly
+- it should not be an execution chunk, shard, or convenience grouping
 
 Examples:
 
-- `api` tests
-- `web` tests
+- one individual test
+- one lint target
 - one build target
 - one smoke-test scenario
-- one shard of a larger test group
+- one document check
 
 A process should answer:
 
 - what exact computation this is
-- what stable key identifies it
+- what stable key identifies it across runs
+- what per-run process id identifies this specific record
+- what file path is associated with it, if a file path exists
 - which step it belongs to
 
 ### Observation
@@ -127,7 +130,7 @@ Plainly:
 
 Examples:
 
-- the `api` process passed
+- one test passed
 - the `docs` area was observed successfully
 - a build target failed
 - a benchmark changed
@@ -254,12 +257,12 @@ Verge would do something like this:
 1. Create one `Run` for the pull request.
 2. Select the `lint`, `test`, `build`, and `docs:validate` steps for that run.
 3. Materialize concrete processes for each step.
-4. For the `test` step, materialize processes such as `api` and `packages`.
+4. For the `test` step, materialize one process per real test Verge wants to track.
 5. Execute those processes.
 6. Save events, logs, and reports while they run.
 7. Record observations such as:
    - `lint` passed
-   - `api` tests failed
+   - one test failed
    - `docs:validate` passed
 8. Update area state so `docs` is fresh, `api` is fresh but failed, and unrelated areas may remain stale or unknown.
 
@@ -269,7 +272,7 @@ If the model feels confusing, come back to this:
 
 - a `run` is the whole evaluation for one commit or trigger
 - a `step` is a major check inside that run
-- a `process` is a smaller concrete unit inside a step
+- a `process` is the smallest tracked unit inside a step
 - an `observation` is what the work learned
 
 Repository health is then the rolled-up result of many observations over time.

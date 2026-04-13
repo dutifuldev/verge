@@ -23,7 +23,7 @@ The UI should reflect the backend model directly:
 
 - a `run` is one commit-level, PR-level, or manual evaluation
 - a `step` is a major check inside a run, like `test`, `build`, or `lint`
-- a `process` is one concrete computation inside a step, like `api`, `web`, `worker`, or `packages`
+- a `process` is the smallest meaningful thing Verge tracks inside a step
 
 That means the main navigation should be built around runs, not around one large homepage panel.
 
@@ -109,11 +109,9 @@ This page should answer:
 
 - why was this run created
 - which steps existed in it
-- what exactly happened in each step
-- which processes ran
+- what happened at the step level
 - which steps or processes were reused
-- which observations were produced
-- what artifacts and checkpoints exist
+- which step should be inspected next
 
 This is where Verge becomes understandable.
 
@@ -121,11 +119,6 @@ The run detail page should include:
 
 - top summary
 - step list
-- process list
-- events
-- observations
-- artifacts
-- checkpoints
 
 ### Top Summary
 
@@ -169,9 +162,11 @@ Example:
   - `typecheck`
   - `test`
 
-### Process List
+Each step row should link to a dedicated step detail page. The run page should not load every process, event, artifact, and checkpoint by default.
 
-This should sit under the selected step or below the step list.
+### Step Detail View
+
+This page should show the processes for one step.
 
 It should show every process inside the step in a table.
 
@@ -186,16 +181,17 @@ Recommended columns:
 - finished at
 - duration
 
+If the step has many processes, this page should use search, filters, and pagination. It should not introduce another grouping layer just to keep the page smaller.
+
 This makes the internal structure of the run obvious.
 
 Example:
 
 - step: `test`
 - processes:
-  - `api`
-  - `web`
-  - `worker`
-  - `packages`
+  - one individual test
+  - another individual test
+  - a third individual test
 
 Without this view, the user cannot tell what the run actually did.
 
@@ -284,11 +280,11 @@ Recommended routes:
 - `/`
 - `/runs`
 - `/runs/:runId`
+- `/runs/:runId/steps/:stepId`
 
 Optional later:
 
 - `/repositories/:slug`
-- `/runs/:runId/steps/:stepKey`
 - `/runs/:runId/processes/:processId`
 
 Normal routes are easier to reason about, easier to share, and easier to extend.
@@ -329,8 +325,9 @@ The next UI iteration should do only this:
 1. Keep a small repository overview on `/`
 2. Add a dedicated paginated `/runs` table
 3. Add a dedicated `/runs/:runId` detail page
-4. Make the run page show steps first, then the processes inside those steps
-5. Move event, observation, artifact, and checkpoint detail into the run page
-6. Remove slogan-style copy from the main view
+4. Make the run page show steps only
+5. Add a dedicated `/runs/:runId/steps/:stepId` page for process detail
+6. Move event, observation, artifact, and checkpoint detail into the step page
+7. Remove slogan-style copy from the main view
 
 That would bring the UI much closer to the actual shape of Verge.

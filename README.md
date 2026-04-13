@@ -34,8 +34,10 @@ In plain terms:
 
 - a `run` is one commit-level, PR-level, or manual evaluation
 - a `step` is a major check inside a run, like `test` or `build`
-- a `process` is one concrete computation inside a step, with a stable identity
+- a `process` is the smallest meaningful thing Verge tracks as its own result
 - an `observation` is the recorded result
+
+A process should not be an execution chunk or grouping convenience. It should be the real unit of evidence, such as one test, one lint target, one build target, or one document check.
 
 Some current API and storage names still use older internal terms such as `run_request`, `run`, and `process_spec`. The public model above is the intended mental model.
 
