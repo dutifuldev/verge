@@ -1,16 +1,142 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { ProcessSpecSummary, RepositoryHealth, RunDetail } from "@verge/contracts";
+import type {
+  PaginatedRunList,
+  ProcessSpecSummary,
+  RepositoryHealth,
+  RunDetail,
+  RunRequestDetail,
+  RunSummary,
+} from "@verge/contracts";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
-const currentRunIdFromHash = (): string | null => {
-  const [, value] = window.location.hash.split("#/runs/");
-  return value ?? null;
+type AppRoute =
+  | { name: "overview" }
+  | {
+      name: "runs";
+      page: number;
+      status: string;
+      trigger: string;
+      processSpecKey: string;
+    }
+  | { name: "run"; runId: string };
+
+const parseRoute = (): AppRoute => {
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  const search = new URLSearchParams(window.location.search);
+
+  if (path === "/runs") {
+    const pageValue = Number(search.get("page") ?? "1");
+    return {
+      name: "runs",
+      page: Number.isFinite(pageValue) && pageValue > 0 ? pageValue : 1,
+      status: search.get("status") ?? "",
+      trigger: search.get("trigger") ?? "",
+      processSpecKey: search.get("processSpecKey") ?? "",
+    };
+  }
+
+  if (path.startsWith("/runs/")) {
+    const runId = path.replace("/runs/", "").trim();
+    if (runId) {
+      return { name: "run", runId };
+    }
+  }
+
+  return { name: "overview" };
+};
+
+const navigate = (path: string): void => {
+  if (`${window.location.pathname}${window.location.search}` === path) {
+    return;
+  }
+
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+};
+
+const fetchJson = async <T,>(path: string, init?: RequestInit): Promise<T> => {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    headers: {
+      "content-type": "application/json",
+    },
+    ...init,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as T;
 };
 
 const formatDateTime = (value: string | null): string =>
   value ? new Date(value).toLocaleString() : "Pending";
+
+const formatRelativeTime = (value: string): string => {
+  const diffMs = Date.now() - new Date(value).getTime();
+  const diffMinutes = Math.round(diffMs / 60000);
+  if (Math.abs(diffMinutes) < 1) {
+    return "just now";
+  }
+
+  if (Math.abs(diffMinutes) < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (Math.abs(diffHours) < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.round(diffHours / 24);
+  return `${diffDays}d ago`;
+};
+
+const formatDuration = (startedAt: string | null, finishedAt: string | null): string => {
+  if (!startedAt) {
+    return "Pending";
+  }
+
+  const start = new Date(startedAt).getTime();
+  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now();
+  const diffSeconds = Math.max(0, Math.round((end - start) / 1000));
+
+  if (diffSeconds < 60) {
+    return `${diffSeconds}s`;
+  }
+
+  const minutes = Math.floor(diffSeconds / 60);
+  const seconds = diffSeconds % 60;
+  if (minutes < 60) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+};
+
+const shortSha = (value: string): string => value.slice(0, 7);
+
+const classifyExecutionMode = (
+  run: Pick<RunSummary, "reusedFromRunId" | "checkpointSourceRunId" | "status">,
+): string => {
+  if (run.reusedFromRunId) {
+    return "reused";
+  }
+
+  if (run.checkpointSourceRunId) {
+    return "resumed";
+  }
+
+  if (run.status === "reused") {
+    return "reused";
+  }
+
+  return "fresh";
+};
 
 export const statusTone = (status: string): string => {
   switch (status) {
@@ -30,38 +156,764 @@ export const statusTone = (status: string): string => {
   }
 };
 
-const fetchJson = async <T,>(path: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: {
-      "content-type": "application/json",
-    },
-    ...init,
-  });
+const StatusPill = ({ status }: { status: string }) => (
+  <span className={`statusPill ${statusTone(status)}`}>{status}</span>
+);
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+const NavLink = ({ active, href, label }: { active: boolean; href: string; label: string }) => (
+  <a
+    className={`navLink ${active ? "active" : ""}`}
+    href={href}
+    onClick={(event) => {
+      event.preventDefault();
+      navigate(href);
+    }}
+  >
+    {label}
+  </a>
+);
+
+const EmptyState = ({ title, body }: { title: string; body: string }) => (
+  <div className="emptyState">
+    <h3>{title}</h3>
+    <p>{body}</p>
+  </div>
+);
+
+const OverviewPage = ({
+  health,
+  processSpecs,
+  error,
+  commitSha,
+  branch,
+  changedFiles,
+  resumeFromCheckpoint,
+  submitting,
+  onCommitShaChange,
+  onBranchChange,
+  onChangedFilesChange,
+  onResumeFromCheckpointChange,
+  onSubmit,
+}: {
+  health: RepositoryHealth | null;
+  processSpecs: ProcessSpecSummary[];
+  error: string | null;
+  commitSha: string;
+  branch: string;
+  changedFiles: string;
+  resumeFromCheckpoint: boolean;
+  submitting: boolean;
+  onCommitShaChange: (value: string) => void;
+  onBranchChange: (value: string) => void;
+  onChangedFilesChange: (value: string) => void;
+  onResumeFromCheckpointChange: (value: boolean) => void;
+  onSubmit: () => void;
+}) => {
+  const recentRuns = health?.recentRuns.slice(0, 6) ?? [];
+
+  return (
+    <div className="pageStack">
+      <section className="overviewHeader">
+        <div>
+          <div className="sectionLabel">Overview</div>
+          <h1>Repository health and recent evaluation state</h1>
+          <p className="pageIntro">
+            Track the current repository state, active work, and recent process-spec runs without
+            collapsing everything into one mixed dashboard.
+          </p>
+        </div>
+        <div className="summaryGrid">
+          <div className="summaryCard">
+            <span className="summaryLabel">Active runs</span>
+            <strong>{health?.activeRuns.length ?? 0}</strong>
+            <span className="summaryMeta">Currently queued or executing</span>
+          </div>
+          <div className="summaryCard">
+            <span className="summaryLabel">Recent runs</span>
+            <strong>{health?.recentRuns.length ?? 0}</strong>
+            <span className="summaryMeta">Visible in the current health window</span>
+          </div>
+          <div className="summaryCard">
+            <span className="summaryLabel">Process specs</span>
+            <strong>{processSpecs.length}</strong>
+            <span className="summaryMeta">Registered for this repository</span>
+          </div>
+        </div>
+      </section>
+
+      {error ? <div className="errorBanner">{error}</div> : null}
+
+      <section className="twoColumnLayout">
+        <article className="panel">
+          <header className="panelHeader">
+            <div>
+              <div className="sectionLabel">Manual Trigger</div>
+              <h2>Create a run request</h2>
+            </div>
+          </header>
+          <div className="formGrid">
+            <label className="field">
+              <span>Commit SHA</span>
+              <input
+                value={commitSha}
+                onChange={(event) => onCommitShaChange(event.target.value)}
+                placeholder="Paste the commit SHA to evaluate"
+              />
+            </label>
+            <label className="field">
+              <span>Branch</span>
+              <input
+                value={branch}
+                onChange={(event) => onBranchChange(event.target.value)}
+                placeholder="main"
+              />
+            </label>
+            <label className="field span2">
+              <span>Changed files</span>
+              <textarea
+                value={changedFiles}
+                onChange={(event) => onChangedFilesChange(event.target.value)}
+                placeholder={"apps/web/src/App.tsx\napps/web/src/styles.css"}
+              />
+            </label>
+            <label className="checkboxField span2">
+              <input
+                type="checkbox"
+                checked={resumeFromCheckpoint}
+                onChange={(event) => onResumeFromCheckpointChange(event.target.checked)}
+              />
+              <span>Resume from the latest compatible checkpoint when available.</span>
+            </label>
+          </div>
+          <div className="panelActions">
+            <button
+              className="primaryButton"
+              disabled={submitting || commitSha.trim().length === 0}
+              onClick={() => void onSubmit()}
+            >
+              {submitting ? "Submitting..." : "Start run"}
+            </button>
+          </div>
+        </article>
+
+        <article className="panel">
+          <header className="panelHeader">
+            <div>
+              <div className="sectionLabel">Area Health</div>
+              <h2>Repository coverage</h2>
+            </div>
+          </header>
+          {health?.areaStates.length ? (
+            <div className="keyValueList">
+              {health.areaStates.map((area) => (
+                <div className="keyValueRow" key={area.key}>
+                  <div>
+                    <strong>{area.displayName}</strong>
+                    <span className="secondaryText">{area.key}</span>
+                  </div>
+                  <div className="rowMeta">
+                    <StatusPill status={area.latestStatus} />
+                    <span className="secondaryText">{area.freshnessBucket}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No area state yet"
+              body="Run the repository once to populate area health."
+            />
+          )}
+        </article>
+      </section>
+
+      <section className="twoColumnLayout">
+        <article className="panel">
+          <header className="panelHeader">
+            <div>
+              <div className="sectionLabel">Process Specs</div>
+              <h2>Registered evaluations</h2>
+            </div>
+          </header>
+          <div className="specGrid">
+            {processSpecs.map((spec) => (
+              <div className="specCard" key={spec.id}>
+                <div className="specHeader">
+                  <strong>{spec.displayName}</strong>
+                  <span className="monoText">{spec.key}</span>
+                </div>
+                <p>{spec.description}</p>
+                <div className="badgeRow">
+                  <span className="subtleBadge">{spec.kind}</span>
+                  <span className="subtleBadge">
+                    {spec.checkpointEnabled ? "checkpoint" : "stateless"}
+                  </span>
+                  <span className="subtleBadge">{spec.reuseEnabled ? "reusable" : "fresh"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <header className="panelHeader">
+            <div>
+              <div className="sectionLabel">Recent Runs</div>
+              <h2>Latest activity</h2>
+            </div>
+            <a
+              className="panelLink"
+              href="/runs"
+              onClick={(event) => {
+                event.preventDefault();
+                navigate("/runs");
+              }}
+            >
+              Open runs table
+            </a>
+          </header>
+          {recentRuns.length ? (
+            <div className="stackList">
+              {recentRuns.map((run) => (
+                <button
+                  className="listButton"
+                  key={run.id}
+                  onClick={() => navigate(`/runs/${run.id}`)}
+                >
+                  <div>
+                    <strong>{run.processSpecDisplayName}</strong>
+                    <span className="secondaryText">
+                      {shortSha(run.id)} · {formatRelativeTime(run.createdAt)}
+                    </span>
+                  </div>
+                  <div className="rowMeta">
+                    <StatusPill status={run.status} />
+                    <span className="secondaryText">{classifyExecutionMode(run)}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No runs yet"
+              body="Push a commit or create a manual run request to see results here."
+            />
+          )}
+        </article>
+      </section>
+    </div>
+  );
+};
+
+const RunsPage = ({
+  runsPage,
+  processSpecs,
+  draftFilters,
+  onDraftFilterChange,
+  onApplyFilters,
+  onPageChange,
+}: {
+  runsPage: PaginatedRunList | null;
+  processSpecs: ProcessSpecSummary[];
+  draftFilters: { status: string; trigger: string; processSpecKey: string };
+  onDraftFilterChange: (key: "status" | "trigger" | "processSpecKey", value: string) => void;
+  onApplyFilters: () => void;
+  onPageChange: (page: number) => void;
+}) => {
+  const totalPages = runsPage ? Math.max(1, Math.ceil(runsPage.total / runsPage.pageSize)) : 1;
+
+  return (
+    <div className="pageStack">
+      <section className="pageHeader">
+        <div>
+          <div className="sectionLabel">Runs</div>
+          <h1>Run history</h1>
+          <p className="pageIntro">
+            One row per run. This is the main operational view for browsing process-spec
+            evaluations.
+          </p>
+        </div>
+      </section>
+
+      <section className="panel">
+        <header className="panelHeader">
+          <div>
+            <div className="sectionLabel">Filters</div>
+            <h2>Browse runs</h2>
+          </div>
+        </header>
+        <div className="filterGrid">
+          <label className="field">
+            <span>Status</span>
+            <select
+              value={draftFilters.status}
+              onChange={(event) => onDraftFilterChange("status", event.target.value)}
+            >
+              <option value="">All</option>
+              {["passed", "failed", "running", "queued", "reused", "interrupted"].map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Trigger</span>
+            <select
+              value={draftFilters.trigger}
+              onChange={(event) => onDraftFilterChange("trigger", event.target.value)}
+            >
+              <option value="">All</option>
+              {["manual", "push", "pull_request"].map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Process spec</span>
+            <select
+              value={draftFilters.processSpecKey}
+              onChange={(event) => onDraftFilterChange("processSpecKey", event.target.value)}
+            >
+              <option value="">All</option>
+              {processSpecs.map((spec) => (
+                <option key={spec.id} value={spec.key}>
+                  {spec.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="panelActions">
+          <button className="secondaryButton" onClick={onApplyFilters}>
+            Apply filters
+          </button>
+        </div>
+      </section>
+
+      <section className="panel tablePanel">
+        <header className="panelHeader">
+          <div>
+            <div className="sectionLabel">Results</div>
+            <h2>Paginated runs table</h2>
+          </div>
+          <div className="secondaryText">{runsPage ? `${runsPage.total} total` : "Loading"}</div>
+        </header>
+        {runsPage?.items.length ? (
+          <>
+            <div className="tableScroller">
+              <table className="dataTable">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Process spec</th>
+                    <th>Commit</th>
+                    <th>Trigger</th>
+                    <th>Ref</th>
+                    <th>Execution</th>
+                    <th>Created</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runsPage.items.map((run) => (
+                    <tr
+                      key={run.id}
+                      className="clickableRow"
+                      onClick={() => navigate(`/runs/${run.id}`)}
+                    >
+                      <td>
+                        <StatusPill status={run.status} />
+                      </td>
+                      <td>
+                        <div className="cellStack">
+                          <strong>{run.processSpecDisplayName}</strong>
+                          <span className="secondaryText">{run.processSpecKey}</span>
+                          <span className="secondaryText clampLine">{run.planReason}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="cellStack">
+                          <span className="monoText">{shortSha(run.commitSha)}</span>
+                          <span className="secondaryText">
+                            {run.changedFiles.length} changed files
+                          </span>
+                        </div>
+                      </td>
+                      <td>{run.trigger}</td>
+                      <td>
+                        <div className="cellStack">
+                          <span>{run.branch ?? "No branch"}</span>
+                          <span className="secondaryText">
+                            {run.pullRequestNumber ? `PR #${run.pullRequestNumber}` : "No PR"}
+                          </span>
+                        </div>
+                      </td>
+                      <td>{classifyExecutionMode(run)}</td>
+                      <td>
+                        <div className="cellStack">
+                          <span>{formatDateTime(run.createdAt)}</span>
+                          <span className="secondaryText">{formatRelativeTime(run.createdAt)}</span>
+                        </div>
+                      </td>
+                      <td>{formatDuration(run.startedAt, run.finishedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <footer className="paginationBar">
+              <div className="secondaryText">
+                Page {runsPage.page} of {totalPages}
+              </div>
+              <div className="paginationActions">
+                <button
+                  className="secondaryButton"
+                  disabled={runsPage.page <= 1}
+                  onClick={() => onPageChange(runsPage.page - 1)}
+                >
+                  Previous
+                </button>
+                <button
+                  className="secondaryButton"
+                  disabled={runsPage.page >= totalPages}
+                  onClick={() => onPageChange(runsPage.page + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </footer>
+          </>
+        ) : (
+          <EmptyState title="No runs matched" body="Change the filters or trigger a new run." />
+        )}
+      </section>
+    </div>
+  );
+};
+
+const RunDetailPage = ({
+  run,
+  request,
+}: {
+  run: RunDetail | null;
+  request: RunRequestDetail | null;
+}) => {
+  if (!run) {
+    return <EmptyState title="Loading run" body="Fetching run detail, processes, and evidence." />;
   }
 
-  return (await response.json()) as T;
+  return (
+    <div className="pageStack">
+      <section className="pageHeader">
+        <div>
+          <div className="sectionLabel">Run Detail</div>
+          <h1>{run.processSpecDisplayName}</h1>
+          <p className="pageIntro">{run.planReason}</p>
+        </div>
+        <div className="badgeRow">
+          <StatusPill status={run.status} />
+          <span className="subtleBadge">{classifyExecutionMode(run)}</span>
+          <span className="subtleBadge">{run.processSpecKey}</span>
+        </div>
+      </section>
+
+      <section className="summaryGrid">
+        <div className="summaryCard">
+          <span className="summaryLabel">Run id</span>
+          <strong className="monoText">{shortSha(run.id)}</strong>
+          <span className="summaryMeta">{run.id}</span>
+        </div>
+        <div className="summaryCard">
+          <span className="summaryLabel">Commit</span>
+          <strong className="monoText">{request ? shortSha(request.commitSha) : "Loading"}</strong>
+          <span className="summaryMeta">{request?.branch ?? "No branch"}</span>
+        </div>
+        <div className="summaryCard">
+          <span className="summaryLabel">Trigger</span>
+          <strong>{request?.trigger ?? "Loading"}</strong>
+          <span className="summaryMeta">
+            {request?.pullRequestNumber ? `PR #${request.pullRequestNumber}` : "No PR"}
+          </span>
+        </div>
+        <div className="summaryCard">
+          <span className="summaryLabel">Duration</span>
+          <strong>{formatDuration(run.startedAt, run.finishedAt)}</strong>
+          <span className="summaryMeta">
+            {run.startedAt
+              ? `${formatDateTime(run.startedAt)} to ${formatDateTime(run.finishedAt)}`
+              : "Pending"}
+          </span>
+        </div>
+      </section>
+
+      <section className="panel tablePanel">
+        <header className="panelHeader">
+          <div>
+            <div className="sectionLabel">Processes</div>
+            <h2>Processes in this run</h2>
+          </div>
+        </header>
+        <div className="tableScroller">
+          <table className="dataTable">
+            <thead>
+              <tr>
+                <th>Process</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Attempts</th>
+                <th>Started</th>
+                <th>Finished</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {run.processes.map((process) => (
+                <tr key={process.id}>
+                  <td>
+                    <div className="cellStack">
+                      <strong>{process.processLabel}</strong>
+                      <span className="secondaryText">{process.processKey}</span>
+                    </div>
+                  </td>
+                  <td>{process.processType}</td>
+                  <td>
+                    <StatusPill status={process.status} />
+                  </td>
+                  <td>{process.attemptCount}</td>
+                  <td>{formatDateTime(process.startedAt)}</td>
+                  <td>{formatDateTime(process.finishedAt)}</td>
+                  <td>{formatDuration(process.startedAt, process.finishedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="twoColumnLayout">
+        <article className="panel">
+          <header className="panelHeader">
+            <div>
+              <div className="sectionLabel">Events</div>
+              <h2>Lifecycle</h2>
+            </div>
+          </header>
+          {run.events.length ? (
+            <div className="stackList">
+              {run.events.map((event) => (
+                <div className="timelineItem" key={event.id}>
+                  <div className="timelineMeta">
+                    <StatusPill status={event.kind} />
+                    <span className="secondaryText">{formatDateTime(event.createdAt)}</span>
+                  </div>
+                  <strong>{event.message}</strong>
+                  {Object.keys(event.payload).length > 0 ? (
+                    <pre className="codeBlock">{JSON.stringify(event.payload, null, 2)}</pre>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No events" body="This run has not emitted any lifecycle events." />
+          )}
+        </article>
+
+        <article className="panel">
+          <header className="panelHeader">
+            <div>
+              <div className="sectionLabel">Observations</div>
+              <h2>Recorded evidence</h2>
+            </div>
+          </header>
+          {run.observations.length ? (
+            <div className="stackList">
+              {run.observations.map((observation) => (
+                <div className="entityCard" key={observation.id}>
+                  <div className="entityHeader">
+                    <div>
+                      <strong>{observation.processKey ?? "run"}</strong>
+                      <span className="secondaryText">
+                        {observation.areaKey ?? "no area"} ·{" "}
+                        {formatDateTime(observation.observedAt)}
+                      </span>
+                    </div>
+                    <StatusPill status={observation.status} />
+                  </div>
+                  <pre className="codeBlock">{JSON.stringify(observation.summary, null, 2)}</pre>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No observations"
+              body="This run has not recorded any observations yet."
+            />
+          )}
+        </article>
+      </section>
+
+      <section className="twoColumnLayout">
+        <article className="panel">
+          <header className="panelHeader">
+            <div>
+              <div className="sectionLabel">Artifacts</div>
+              <h2>Stored outputs</h2>
+            </div>
+          </header>
+          {run.artifacts.length ? (
+            <div className="stackList">
+              {run.artifacts.map((artifact) => (
+                <div className="entityCard" key={artifact.id}>
+                  <div className="entityHeader">
+                    <div>
+                      <strong>{artifact.artifactKey}</strong>
+                      <span className="secondaryText">{artifact.mediaType}</span>
+                    </div>
+                    <span className="secondaryText">{formatDateTime(artifact.createdAt)}</span>
+                  </div>
+                  <div className="infoGrid">
+                    <div>
+                      <span className="infoLabel">Storage path</span>
+                      <div className="monoText breakText">{artifact.storagePath}</div>
+                    </div>
+                    <div>
+                      <span className="infoLabel">Process id</span>
+                      <div className="monoText breakText">
+                        {artifact.runProcessId ?? "run-level"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No artifacts" body="This run has not stored any artifacts." />
+          )}
+        </article>
+
+        <article className="panel">
+          <header className="panelHeader">
+            <div>
+              <div className="sectionLabel">Checkpoints</div>
+              <h2>Resume state</h2>
+            </div>
+          </header>
+          {run.checkpoints.length ? (
+            <div className="stackList">
+              {run.checkpoints.map((checkpoint) => (
+                <div className="entityCard" key={checkpoint.id}>
+                  <div className="entityHeader">
+                    <div>
+                      <strong>{formatDateTime(checkpoint.createdAt)}</strong>
+                      <span className="secondaryText">
+                        resumable until {formatDateTime(checkpoint.resumableUntil)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="infoGrid">
+                    <div>
+                      <span className="infoLabel">Completed</span>
+                      <div>{checkpoint.completedProcessKeys.join(", ") || "none"}</div>
+                    </div>
+                    <div>
+                      <span className="infoLabel">Pending</span>
+                      <div>{checkpoint.pendingProcessKeys.join(", ") || "none"}</div>
+                    </div>
+                    <div className="span2">
+                      <span className="infoLabel">Storage path</span>
+                      <div className="monoText breakText">{checkpoint.storagePath ?? "none"}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No checkpoints" body="This run has no saved checkpoint state." />
+          )}
+        </article>
+      </section>
+
+      {request ? (
+        <section className="panel">
+          <header className="panelHeader">
+            <div>
+              <div className="sectionLabel">Run Request</div>
+              <h2>Trigger context</h2>
+            </div>
+          </header>
+          <div className="infoGrid">
+            <div>
+              <span className="infoLabel">Request id</span>
+              <div className="monoText breakText">{request.id}</div>
+            </div>
+            <div>
+              <span className="infoLabel">Repository</span>
+              <div>{request.repositorySlug}</div>
+            </div>
+            <div>
+              <span className="infoLabel">Created</span>
+              <div>{formatDateTime(request.createdAt)}</div>
+            </div>
+            <div>
+              <span className="infoLabel">Status</span>
+              <div>{request.status}</div>
+            </div>
+            <div className="span2">
+              <span className="infoLabel">Changed files</span>
+              <div className="codeList">
+                {request.changedFiles.length ? request.changedFiles.join("\n") : "No changed files"}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
 };
 
 export const App = () => {
+  const [route, setRoute] = useState<AppRoute>(parseRoute());
   const [health, setHealth] = useState<RepositoryHealth | null>(null);
   const [processSpecs, setProcessSpecs] = useState<ProcessSpecSummary[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(currentRunIdFromHash());
+  const [runsPage, setRunsPage] = useState<PaginatedRunList | null>(null);
   const [selectedRun, setSelectedRun] = useState<RunDetail | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<RunRequestDetail | null>(null);
   const [commitSha, setCommitSha] = useState("");
   const [branch, setBranch] = useState("main");
   const [changedFiles, setChangedFiles] = useState("");
   const [resumeFromCheckpoint, setResumeFromCheckpoint] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftFilters, setDraftFilters] = useState(() =>
+    route.name === "runs"
+      ? {
+          status: route.status,
+          trigger: route.trigger,
+          processSpecKey: route.processSpecKey,
+        }
+      : { status: "", trigger: "", processSpecKey: "" },
+  );
 
   useEffect(() => {
-    const syncHash = (): void => setSelectedRunId(currentRunIdFromHash());
-    window.addEventListener("hashchange", syncHash);
-    return () => window.removeEventListener("hashchange", syncHash);
+    const syncRoute = (): void => setRoute(parseRoute());
+    window.addEventListener("popstate", syncRoute);
+    return () => window.removeEventListener("popstate", syncRoute);
   }, []);
+
+  useEffect(() => {
+    if (route.name !== "runs") {
+      return;
+    }
+
+    setDraftFilters({
+      status: route.status,
+      trigger: route.trigger,
+      processSpecKey: route.processSpecKey,
+    });
+  }, [route]);
 
   useEffect(() => {
     const refresh = async (): Promise<void> => {
@@ -73,49 +925,92 @@ export const App = () => {
         setHealth(nextHealth);
         setProcessSpecs(nextSpecs);
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : "Failed to load dashboard");
+        setError(nextError instanceof Error ? nextError.message : "Failed to load overview");
       }
     };
 
     void refresh();
     const interval = window.setInterval(() => {
       void refresh();
-    }, 2000);
+    }, 4000);
     return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    if (!selectedRunId) {
-      setSelectedRun(null);
+    if (route.name !== "runs") {
+      setRunsPage(null);
       return;
     }
 
+    setRunsPage(null);
+
     const refresh = async (): Promise<void> => {
       try {
-        const nextRun = await fetchJson<RunDetail>(`/runs/${selectedRunId}`);
-        setSelectedRun(nextRun);
+        const search = new URLSearchParams({
+          page: String(route.page),
+          pageSize: "20",
+        });
+
+        if (route.status) {
+          search.set("status", route.status);
+        }
+        if (route.trigger) {
+          search.set("trigger", route.trigger);
+        }
+        if (route.processSpecKey) {
+          search.set("processSpecKey", route.processSpecKey);
+        }
+
+        const nextRunsPage = await fetchJson<PaginatedRunList>(
+          `/repositories/verge/runs?${search.toString()}`,
+        );
+        setRunsPage(nextRunsPage);
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : "Failed to load run");
+        setError(nextError instanceof Error ? nextError.message : "Failed to load runs");
       }
     };
 
     void refresh();
     const interval = window.setInterval(() => {
       void refresh();
-    }, 2000);
+    }, 4000);
     return () => window.clearInterval(interval);
-  }, [selectedRunId]);
+  }, [route]);
 
-  const runCards = useMemo(() => {
-    if (!health) {
-      return [];
+  useEffect(() => {
+    if (route.name !== "run") {
+      setSelectedRun(null);
+      setSelectedRequest(null);
+      return;
     }
-    return [...health.activeRuns, ...health.recentRuns].slice(0, 8);
-  }, [health]);
+
+    setSelectedRun(null);
+    setSelectedRequest(null);
+
+    const refresh = async (): Promise<void> => {
+      try {
+        const run = await fetchJson<RunDetail>(`/runs/${route.runId}`);
+        setSelectedRun(run);
+        const request = await fetchJson<RunRequestDetail>(`/run-requests/${run.runRequestId}`);
+        setSelectedRequest(request);
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError.message : "Failed to load run detail");
+      }
+    };
+
+    void refresh();
+    const interval = window.setInterval(() => {
+      void refresh();
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [route]);
+
+  const activeRunCount = useMemo(() => health?.activeRuns.length ?? 0, [health]);
 
   const submitManualRun = async (): Promise<void> => {
     setSubmitting(true);
     setError(null);
+
     try {
       const response = await fetchJson<{ runIds: string[] }>("/run-requests/manual", {
         method: "POST",
@@ -132,7 +1027,7 @@ export const App = () => {
       });
 
       if (response.runIds.length > 0) {
-        window.location.hash = `/runs/${response.runIds[0]}`;
+        navigate(`/runs/${response.runIds[0]}`);
       }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to start run");
@@ -141,213 +1036,92 @@ export const App = () => {
     }
   };
 
+  const applyRunFilters = (): void => {
+    const search = new URLSearchParams();
+    if (draftFilters.status) {
+      search.set("status", draftFilters.status);
+    }
+    if (draftFilters.trigger) {
+      search.set("trigger", draftFilters.trigger);
+    }
+    if (draftFilters.processSpecKey) {
+      search.set("processSpecKey", draftFilters.processSpecKey);
+    }
+    search.set("page", "1");
+    navigate(`/runs?${search.toString()}`);
+  };
+
+  const changeRunsPage = (page: number): void => {
+    if (route.name !== "runs") {
+      return;
+    }
+
+    const search = new URLSearchParams();
+    if (route.status) {
+      search.set("status", route.status);
+    }
+    if (route.trigger) {
+      search.set("trigger", route.trigger);
+    }
+    if (route.processSpecKey) {
+      search.set("processSpecKey", route.processSpecKey);
+    }
+    search.set("page", String(page));
+    navigate(`/runs?${search.toString()}`);
+  };
+
   return (
-    <main className="shell">
-      <section className="hero">
-        <div>
-          <p className="eyebrow">Repository State</p>
-          <h1>Repository health and run status</h1>
-          <p className="lede">
-            Shows run requests, process results, reusable evidence, and current area status.
-          </p>
+    <main className="appShell">
+      <header className="topbar">
+        <div className="brandBlock">
+          <div className="brandMark">V</div>
+          <div>
+            <div className="brandName">Verge</div>
+            <div className="secondaryText">Repository control plane</div>
+          </div>
         </div>
-        <div className="heroCard">
-          <span className={`tone ${statusTone(health?.activeRuns[0]?.status ?? "unknown")}`}>
-            {health?.activeRuns.length ?? 0} active runs
-          </span>
-          <p className="heroMetric">{health?.recentRuns.length ?? 0}</p>
-          <p className="heroLabel">Recent runs tracked for this repo</p>
+        <nav className="topnav">
+          <NavLink active={route.name === "overview"} href="/" label="Overview" />
+          <NavLink active={route.name === "runs"} href="/runs" label="Runs" />
+        </nav>
+        <div className="topbarMeta">
+          <StatusPill status={activeRunCount > 0 ? "running" : "passed"} />
+          <span className="secondaryText">{activeRunCount} active</span>
         </div>
-      </section>
+      </header>
 
-      {error ? <div className="errorBanner">{error}</div> : null}
+      {route.name === "overview" ? (
+        <OverviewPage
+          health={health}
+          processSpecs={processSpecs}
+          error={error}
+          commitSha={commitSha}
+          branch={branch}
+          changedFiles={changedFiles}
+          resumeFromCheckpoint={resumeFromCheckpoint}
+          submitting={submitting}
+          onCommitShaChange={setCommitSha}
+          onBranchChange={setBranch}
+          onChangedFilesChange={setChangedFiles}
+          onResumeFromCheckpointChange={setResumeFromCheckpoint}
+          onSubmit={() => void submitManualRun()}
+        />
+      ) : null}
 
-      <section className="grid">
-        <article className="panel formPanel">
-          <header>
-            <p className="eyebrow">Manual Trigger</p>
-            <h2>Create a run request</h2>
-          </header>
-          <label>
-            Commit SHA
-            <input
-              value={commitSha}
-              onChange={(event) => setCommitSha(event.target.value)}
-              placeholder="Paste the commit SHA to evaluate"
-            />
-          </label>
-          <label>
-            Branch
-            <input
-              value={branch}
-              onChange={(event) => setBranch(event.target.value)}
-              placeholder="main"
-            />
-          </label>
-          <label>
-            Changed files
-            <textarea
-              value={changedFiles}
-              onChange={(event) => setChangedFiles(event.target.value)}
-              placeholder={"apps/api/src/index.ts\ndocs/2026-04-12-verge-basic-objects.md"}
-            />
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={resumeFromCheckpoint}
-              onChange={(event) => setResumeFromCheckpoint(event.target.checked)}
-            />
-            Resume from the latest compatible checkpoint when available.
-          </label>
-          <button
-            disabled={submitting || commitSha.trim().length === 0}
-            onClick={() => void submitManualRun()}
-          >
-            {submitting ? "Submitting..." : "Start run"}
-          </button>
-        </article>
+      {route.name === "runs" ? (
+        <RunsPage
+          runsPage={runsPage}
+          processSpecs={processSpecs}
+          draftFilters={draftFilters}
+          onDraftFilterChange={(key, value) => {
+            setDraftFilters((current) => ({ ...current, [key]: value }));
+          }}
+          onApplyFilters={applyRunFilters}
+          onPageChange={changeRunsPage}
+        />
+      ) : null}
 
-        <article className="panel">
-          <header>
-            <p className="eyebrow">Area Health</p>
-            <h2>Repository coverage</h2>
-          </header>
-          <div className="stack">
-            {health?.areaStates.map((area) => (
-              <div className="areaRow" key={area.key}>
-                <div>
-                  <strong>{area.displayName}</strong>
-                  <p>{area.key}</p>
-                </div>
-                <div className="meta">
-                  <span className={`tone ${statusTone(area.latestStatus)}`}>
-                    {area.latestStatus}
-                  </span>
-                  <small>{area.freshnessBucket}</small>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-      </section>
-
-      <section className="grid">
-        <article className="panel">
-          <header>
-            <p className="eyebrow">Specs</p>
-            <h2>Registered process specs</h2>
-          </header>
-          <div className="specList">
-            {processSpecs.map((spec) => (
-              <div className="specCard" key={spec.id}>
-                <div>
-                  <strong>{spec.displayName}</strong>
-                  <p>{spec.key}</p>
-                </div>
-                <div className="meta">
-                  <span className="tone muted">{spec.kind}</span>
-                  <small>
-                    {spec.checkpointEnabled ? "checkpoint" : "stateless"} /{" "}
-                    {spec.reuseEnabled ? "reusable" : "fresh"}
-                  </small>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="panel">
-          <header>
-            <p className="eyebrow">Runs</p>
-            <h2>Recent process-spec runs</h2>
-          </header>
-          <div className="runList">
-            {runCards.map((run) => (
-              <button
-                className="runCard"
-                key={run.id}
-                onClick={() => {
-                  window.location.hash = `/runs/${run.id}`;
-                }}
-              >
-                <div>
-                  <strong>{run.processSpecDisplayName}</strong>
-                  <p>{run.processSpecKey}</p>
-                </div>
-                <div className="meta">
-                  <span className={`tone ${statusTone(run.status)}`}>{run.status}</span>
-                  <small>{formatDateTime(run.createdAt)}</small>
-                </div>
-              </button>
-            ))}
-          </div>
-        </article>
-      </section>
-
-      <section className="panel detailPanel">
-        <header>
-          <p className="eyebrow">Run Detail</p>
-          <h2>{selectedRun ? selectedRun.processSpecDisplayName : "Select a run"}</h2>
-        </header>
-
-        {selectedRun ? (
-          <div className="detailGrid">
-            <div>
-              <div className="detailHeader">
-                <span className={`tone ${statusTone(selectedRun.status)}`}>
-                  {selectedRun.status}
-                </span>
-                <span>{selectedRun.planReason}</span>
-              </div>
-              <div className="stack">
-                {selectedRun.processes.map((process) => (
-                  <div className="processRow" key={process.id}>
-                    <div>
-                      <strong>{process.processLabel}</strong>
-                      <p>{process.processKey}</p>
-                    </div>
-                    <div className="meta">
-                      <span className={`tone ${statusTone(process.status)}`}>{process.status}</span>
-                      <small>{formatDateTime(process.finishedAt)}</small>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3>Observations</h3>
-              <div className="stack compact">
-                {selectedRun.observations.map((observation) => (
-                  <div className="miniCard" key={observation.id}>
-                    <div className="meta">
-                      <strong>{observation.processKey ?? "run"}</strong>
-                      <span className={`tone ${statusTone(observation.status)}`}>
-                        {observation.status}
-                      </span>
-                    </div>
-                    <pre>{JSON.stringify(observation.summary, null, 2)}</pre>
-                  </div>
-                ))}
-              </div>
-              <h3>Checkpoints</h3>
-              <div className="stack compact">
-                {selectedRun.checkpoints.map((checkpoint) => (
-                  <div className="miniCard" key={checkpoint.id}>
-                    <p>completed: {checkpoint.completedProcessKeys.join(", ") || "none"}</p>
-                    <p>pending: {checkpoint.pendingProcessKeys.join(", ") || "none"}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <p className="empty">
-            Choose a run to inspect its processes, observations, and checkpoints.
-          </p>
-        )}
-      </section>
+      {route.name === "run" ? <RunDetailPage run={selectedRun} request={selectedRequest} /> : null}
     </main>
   );
 };

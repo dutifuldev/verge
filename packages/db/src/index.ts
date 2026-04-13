@@ -7,6 +7,7 @@ import type {
   AppendRunEventInput,
   ClaimedRunProcess,
   CommitDetail,
+  PaginatedRunList,
   PullRequestDetail,
   ProcessSpec,
   ProcessSpecSummary,
@@ -16,6 +17,8 @@ import type {
   RepositoryDefinition,
   RepositoryHealth,
   RunDetail,
+  RunListQuery,
+  RunListItem,
   RunRequestDetail,
   RunSummary,
   RunTrigger,
@@ -1167,6 +1170,11 @@ const selectRunRows = (db: Kysely<VergeDatabase>, repositorySlug?: string) => {
       "process_specs.key as processSpecKey",
       "process_specs.display_name as processSpecDisplayName",
       "repositories.slug as repositorySlug",
+      "run_requests.trigger as trigger",
+      "run_requests.commit_sha as commitSha",
+      "run_requests.branch as branch",
+      "run_requests.pull_request_number as pullRequestNumber",
+      "run_requests.changed_files as changedFiles",
     ]);
 
   if (repositorySlug) {
@@ -1208,6 +1216,69 @@ const toRunSummary = async (
       startedAt: iso(process.started_at),
       finishedAt: iso(process.finished_at),
     })),
+  };
+};
+
+const toRunListItem = async (
+  db: Kysely<VergeDatabase>,
+  row: Awaited<ReturnType<ReturnType<typeof selectRunRows>["executeTakeFirst"]>>,
+): Promise<RunListItem> => {
+  if (!row) {
+    throw new Error("Missing run row");
+  }
+
+  const summary = await toRunSummary(db, row);
+
+  return {
+    ...summary,
+    repositorySlug: row.repositorySlug,
+    trigger: row.trigger as RunTrigger,
+    commitSha: row.commitSha,
+    branch: row.branch,
+    pullRequestNumber: row.pullRequestNumber,
+    changedFiles: parseJson<string[]>(row.changedFiles),
+  };
+};
+
+export const listRepositoryRuns = async (
+  db: Kysely<VergeDatabase>,
+  repositorySlug: string,
+  query: RunListQuery,
+): Promise<PaginatedRunList> => {
+  const page = Math.max(1, query.page);
+  const pageSize = Math.max(1, Math.min(100, query.pageSize));
+  const offset = (page - 1) * pageSize;
+
+  let baseQuery = selectRunRows(db, repositorySlug);
+
+  if (query.status) {
+    baseQuery = baseQuery.where("runs.status", "=", query.status);
+  }
+
+  if (query.trigger) {
+    baseQuery = baseQuery.where("run_requests.trigger", "=", query.trigger);
+  }
+
+  if (query.processSpecKey) {
+    baseQuery = baseQuery.where("process_specs.key", "=", query.processSpecKey);
+  }
+
+  const totalRow = await baseQuery
+    .clearSelect()
+    .select(({ fn }) => fn.count<string>("runs.id").as("count"))
+    .executeTakeFirstOrThrow();
+
+  const rows = await baseQuery
+    .orderBy("runs.created_at", "desc")
+    .limit(pageSize)
+    .offset(offset)
+    .execute();
+
+  return {
+    page,
+    pageSize,
+    total: Number(totalRow.count),
+    items: await Promise.all(rows.map((row) => toRunListItem(db, row))),
   };
 };
 

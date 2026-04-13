@@ -12,6 +12,7 @@ import {
   recordArtifactInputSchema,
   recordCheckpointInputSchema,
   recordObservationInputSchema,
+  runListQuerySchema,
   workerClaimRequestSchema,
   workerHeartbeatInputSchema,
 } from "@verge/contracts";
@@ -37,6 +38,7 @@ import {
   getRunDetail,
   getRunRequestDetail,
   heartbeatRunProcess,
+  listRepositoryRuns,
   listProcessSpecSummaries,
   listRunProcesses,
   migrateDatabase,
@@ -543,6 +545,14 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
     );
     return health.areaStates;
   });
+
+  app.get("/repositories/:repo/runs", async (request) =>
+    listRepositoryRuns(
+      context.connection.db,
+      (request.params as { repo: string }).repo,
+      runListQuerySchema.parse(request.query),
+    ),
+  );
 
   app.get("/repositories/:repo/commits/:sha", async (request) =>
     getCommitDetail(

@@ -66,6 +66,16 @@ describe.runIf(runIntegration)("api integration", () => {
     });
     expect(healthResponse.statusCode).toBe(200);
     expect(healthResponse.json()).toHaveProperty("areaStates");
+
+    const runsResponse = await app.inject({
+      method: "GET",
+      url: "/repositories/verge/runs?page=1&pageSize=5",
+    });
+    expect(runsResponse.statusCode).toBe(200);
+    expect(runsResponse.json()).toMatchObject({
+      page: 1,
+      pageSize: 5,
+    });
   });
 
   it("ingests GitHub webhooks idempotently and exposes pull request detail", async () => {

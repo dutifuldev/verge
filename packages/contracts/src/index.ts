@@ -245,6 +245,30 @@ export const runSummarySchema = z.object({
   processes: z.array(runProcessSummarySchema),
 });
 
+export const runListQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+  status: runStatusSchema.optional(),
+  trigger: runTriggerSchema.optional(),
+  processSpecKey: z.string().min(1).optional(),
+});
+
+export const runListItemSchema = runSummarySchema.extend({
+  repositorySlug: z.string(),
+  trigger: runTriggerSchema,
+  commitSha: z.string(),
+  branch: z.string().nullable(),
+  pullRequestNumber: z.number().int().positive().nullable(),
+  changedFiles: z.array(z.string()),
+});
+
+export const paginatedRunListSchema = z.object({
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  total: z.number().int().nonnegative(),
+  items: z.array(runListItemSchema),
+});
+
 export const runRequestDetailSchema = z.object({
   id: z.string().uuid(),
   repositorySlug: z.string(),
@@ -354,6 +378,9 @@ export type RecordObservationInput = z.infer<typeof recordObservationInputSchema
 export type RecordArtifactInput = z.infer<typeof recordArtifactInputSchema>;
 export type RecordCheckpointInput = z.infer<typeof recordCheckpointInputSchema>;
 export type RunSummary = z.infer<typeof runSummarySchema>;
+export type RunListQuery = z.infer<typeof runListQuerySchema>;
+export type RunListItem = z.infer<typeof runListItemSchema>;
+export type PaginatedRunList = z.infer<typeof paginatedRunListSchema>;
 export type RunDetail = z.infer<typeof runDetailSchema>;
 export type RunRequestDetail = z.infer<typeof runRequestDetailSchema>;
 export type ProcessSpecSummary = z.infer<typeof processSpecSummarySchema>;
