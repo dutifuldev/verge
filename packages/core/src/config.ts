@@ -4,8 +4,8 @@ import { pathToFileURL } from "node:url";
 
 import type {
   ProcessDefinition,
-  ProcessSpec,
   RepositoryDefinition,
+  StepSpec,
   VergeConfig,
 } from "@verge/contracts";
 import { vergeConfigSchema } from "@verge/contracts";
@@ -67,7 +67,7 @@ export const createVitestStep = (input: {
   checkpointEnabled?: boolean;
   alwaysRun?: boolean;
   baseCommand?: string[];
-}): ProcessSpec => ({
+}): StepSpec => ({
   key: input.key,
   displayName: input.displayName,
   description: input.description,
@@ -196,7 +196,7 @@ const normalizeVitestFullName = (value: string): string => value.replaceAll(" > 
 
 export const discoverVitestProcesses = async (input: {
   repository: RepositoryDefinition;
-  step: ProcessSpec;
+  step: StepSpec;
 }): Promise<ProcessDefinition[]> => {
   const listCommand = [...input.step.baseCommand];
   const runIndex = listCommand.lastIndexOf("run");
@@ -217,8 +217,8 @@ export const discoverVitestProcesses = async (input: {
 
     return {
       key: `${test.projectName ?? "default"}::${relativeFilePath}::${test.name}`,
-      label: test.name,
-      type: "test",
+      displayName: test.name,
+      kind: "test",
       areaKeys: deriveAreaKeysForPath(input.repository, relativeFilePath),
       filePath: relativeFilePath,
       extraArgs: [
@@ -235,9 +235,9 @@ export const discoverVitestProcesses = async (input: {
 export const materializedToDefinitions = (processes: MaterializedProcess[]): ProcessDefinition[] =>
   processes.map((process) => ({
     key: process.key,
-    label: process.label,
+    displayName: process.displayName,
     areaKeys: process.areaKeys,
     extraArgs: [],
     ...(process.filePath ? { filePath: process.filePath } : {}),
-    type: process.type,
+    kind: process.kind,
   }));

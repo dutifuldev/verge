@@ -41,8 +41,6 @@ In plain terms:
 
 A process should not be an execution chunk or grouping convenience. It should be the real unit of evidence, such as one test, one lint target, one build target, or one document check.
 
-Some current API and storage names still use older internal terms such as `run_request`, `run`, and `process_spec`. The public model above is the intended mental model.
-
 ## Workspace Layout
 
 ```text

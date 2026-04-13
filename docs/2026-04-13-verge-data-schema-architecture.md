@@ -597,14 +597,9 @@ That means the real stable identity is:
 
 But the durable historical record lives on `process_runs`, not on endlessly versioned process definitions.
 
-## Why This Model Is Better Than The Current One
+## Why This Model Fits Verge
 
-The current implementation works, but some names still leak earlier modeling:
-
-- `run_requests` is really the top-level `runs` table
-- current `runs` are really `step_runs`
-- current `run_processes` are really `process_runs`
-- current `process_specs` are really `step_specs`
+The implemented cutover now matches this model directly.
 
 The model in this document is cleaner because it separates:
 
@@ -614,22 +609,6 @@ The model in this document is cleaner because it separates:
 - current config from immutable execution history
 
 It also avoids a storage-heavy design where every discovered test definition gets a new historical version row every time test names or files change.
-
-## Recommended Migration Direction
-
-The clean migration path from the current implementation is:
-
-1. rename `process_specs` to `step_specs`
-2. rename `run_requests` to `runs`
-3. rename current `runs` to `step_runs`
-4. rename `run_processes` to `process_runs`
-5. keep `processes` as the stable process catalog
-6. move `path_prefixes` into `repo_areas` instead of keeping them only in config memory
-7. add step snapshot fields onto `step_runs`
-8. add process snapshot fields onto `process_runs`
-9. keep `process_id` foreign keys in `process_runs` and `observations` only as optional links to current catalog rows
-
-That would make the stored schema match the product language much more directly.
 
 ## The Short Version
 

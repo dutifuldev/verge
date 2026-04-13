@@ -2,14 +2,14 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
-import type { ProcessDefinition, ProcessSpec, RepositoryDefinition } from "@verge/contracts";
+import type { ProcessDefinition, RepositoryDefinition, StepSpec } from "@verge/contracts";
 
 export type MaterializedProcess = {
   key: string;
-  label: string;
+  displayName: string;
   areaKeys: string[];
   filePath?: string;
-  type: string;
+  kind: string;
   command: string[];
 };
 
@@ -38,20 +38,20 @@ export const getSelfHostedRepositoryDefinition = (rootPath: string): RepositoryD
 
 const named = (
   key: string,
-  label: string,
+  displayName: string,
   areaKeys: string[],
   extraArgs: string[] = [],
   filePath?: string,
 ): ProcessDefinition => ({
   key,
-  label,
+  displayName,
   areaKeys,
   extraArgs,
   ...(filePath ? { filePath } : {}),
-  type: "named",
+  kind: "named",
 });
 
-export const getSelfHostedProcessSpecs = (rootPath: string): ProcessSpec[] => [
+export const getSelfHostedProcessSpecs = (rootPath: string): StepSpec[] => [
   {
     key: "format-check",
     displayName: "Format Check",
@@ -191,7 +191,7 @@ const runJsonCommand = async <T>(command: string[], cwd: string): Promise<T> => 
 };
 
 export const materializeProcesses = async (
-  processSpec: ProcessSpec,
+  processSpec: StepSpec,
 ): Promise<MaterializedProcess[]> => {
   const materialization = processSpec.materialization;
 
@@ -216,9 +216,9 @@ export const materializeProcesses = async (
         const shard = index + 1;
         return {
           key: `shard-${shard}`,
-          label: `${materialization.labelPrefix} ${shard}/${materialization.count}`,
+          displayName: `${materialization.displayNamePrefix} ${shard}/${materialization.count}`,
           areaKeys: materialization.areaKeys,
-          type: "shard",
+          kind: "shard",
           command: [
             ...processSpec.baseCommand,
             ...materialization.extraArgsTemplate.map((segment: string) =>
@@ -233,14 +233,14 @@ export const materializeProcesses = async (
 };
 
 const materializeNamed = (
-  processSpec: ProcessSpec,
+  processSpec: StepSpec,
   definition: ProcessDefinition,
 ): MaterializedProcess => ({
   key: definition.key,
-  label: definition.label,
+  displayName: definition.displayName,
   areaKeys: definition.areaKeys,
   ...(definition.filePath ? { filePath: definition.filePath } : {}),
-  type: definition.type,
+  kind: definition.kind,
   command: [...processSpec.baseCommand, ...definition.extraArgs],
 });
 
@@ -266,7 +266,7 @@ export const deriveAreaKeysFromChangedFiles = (
 };
 
 export const isProcessSpecRelevant = (
-  processSpec: ProcessSpec,
+  processSpec: StepSpec,
   changedAreaKeys: string[],
 ): boolean => {
   if (processSpec.alwaysRun) {
@@ -279,7 +279,7 @@ export const isProcessSpecRelevant = (
 export const computeExecutionFingerprint = (
   repositorySlug: string,
   commitSha: string,
-  processSpec: ProcessSpec,
+  processSpec: StepSpec,
   materializedProcesses?: MaterializedProcess[],
 ): string =>
   createHash("sha256")
@@ -290,15 +290,18 @@ export const computeExecutionFingerprint = (
         processSpec,
         materializedProcesses: materializedProcesses?.map((process) => ({
           key: process.key,
-          label: process.label,
+          displayName: process.displayName,
           areaKeys: process.areaKeys,
           filePath: process.filePath ?? null,
-          type: process.type,
+          kind: process.kind,
           command: process.command,
         })),
       }),
     )
     .digest("hex");
+
+export const computeStepConfigFingerprint = (stepSpec: StepSpec): string =>
+  createHash("sha256").update(JSON.stringify(stepSpec)).digest("hex");
 
 export const determineFreshnessBucket = (
   lastObservedAt: Date | null,

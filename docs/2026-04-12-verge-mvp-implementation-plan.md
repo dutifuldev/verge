@@ -31,8 +31,6 @@ In plain terms:
 
 A process should not be an execution chunk, group, or shard. It should be the real unit of evidence, such as one test, one lint target, one build target, or one document check.
 
-Some current implementation details still use older internal names such as `run_request`, `run`, and `process_spec`. This plan keeps those names where it is talking about current tables or endpoints, but the public product model above is the one Verge should present.
-
 ## MVP Goal
 
 The first MVP should let a single repository:
@@ -360,43 +358,33 @@ The MVP should implement the following core records.
 ### Repository, Step, and Process Metadata
 
 - `repositories`
-- `process_specs`
+- `step_specs`
 - `processes`
-- `process_observed_areas`
-- `process_execution_profiles`
 
 ### Event and Planning Records
 
 - `event_ingestions`
-- `run_requests`
-- `planned_runs`
-- `planning_decisions`
+- `runs`
 
 ### Execution Records
 
-- `runs`
-- `run_processes`
-- `run_leases`
-- `run_heartbeats`
-- `run_lifecycle_events`
-- `run_logs`
-- `run_artifacts`
-- `run_checkpoints`
+- `step_runs`
+- `process_runs`
+- `run_events`
+- `artifacts`
+- `checkpoints`
 
 ### Evidence Records
 
 - `observations`
-- `observation_events`
 - `repo_areas`
-- `area_freshness_state`
+- `repo_area_state`
 
 ## Minimum Table Intent
 
-The table names can change, but the MVP must preserve these responsibilities.
+The public naming should stay `run -> step -> process -> observation`.
 
-The public naming should stay `run -> step -> process -> observation`. The table names below are current implementation-oriented names.
-
-`process_specs`
+`step_specs`
 
 - stable step key
 - display name
@@ -408,46 +396,40 @@ The public naming should stay `run -> step -> process -> observation`. The table
 
 `processes`
 
-- step definition
+- step spec
 - stable process key
-- display label
+- display name
 - process metadata
 
-`run_requests`
+`runs`
 
 - source event type
 - repository
 - commit SHA
 - pull request number, if any
 - changed files snapshot
-- request status
-
-Publicly, this is the top-level run trigger record.
-
-`planned_runs`
-
-- step
-- top-level run trigger
-- decision reason
-- planned action: `run`, `reuse`, `skip`
-- evidence target areas
-
-`runs`
-
-- run id
-- step
-- commit SHA
-- execution scope hash
-- current status
+- overall status
 - started/finished timestamps
-- reused-from run id, if any
 
-`run_processes`
+`step_runs`
 
 - run id
+- step key
+- step snapshot
+- config fingerprint
+- execution fingerprint
+- current status
+- plan reason
+- started/finished timestamps
+- reused-from step run id, if any
+- checkpoint source step run id, if any
+
+`process_runs`
+
+- step run id
 - process key
-- process label
-- process type
+- process display name
+- process kind
 - status
 - selection payload
 - started/finished timestamps
@@ -455,8 +437,9 @@ Publicly, this is the top-level run trigger record.
 
 `observations`
 
-- run id
-- process key, nullable for run-level evidence
+- step run id
+- process run id, nullable for step-level evidence
+- process key, nullable for step-level evidence
 - execution scope fields
 - status
 - observed at

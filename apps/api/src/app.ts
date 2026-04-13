@@ -1,12 +1,11 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyRawBody from "fastify-raw-body";
-
 import {
   appendRunEventInputSchema,
-  createManualRunRequestInputSchema,
+  createManualRunInputSchema,
   githubWebhookPullRequestPayloadSchema,
   githubWebhookPushPayloadSchema,
   recordArtifactInputSchema,
@@ -16,39 +15,39 @@ import {
   workerClaimRequestSchema,
   workerHeartbeatInputSchema,
 } from "@verge/contracts";
-import { loadVergeConfig, planProcessSpecRuns } from "@verge/core";
+import { computeStepConfigFingerprint, loadVergeConfig, planStepRuns } from "@verge/core";
 import {
-  claimNextRunProcess,
+  claimNextProcessRun,
   cloneCompletedProcessesFromCheckpoint,
-  cloneRunForReuse,
+  cloneStepRunForReuse,
   createEventIngestion,
+  createProcessRuns,
   createRun,
-  createRunProcesses,
-  createRunRequest,
+  createStepRun,
+  findLatestCheckpoint,
+  findReusableStepRun,
   getCommitDetail,
-  getProcessSpecsForRepository,
-  getPullRequestDetail,
   getRepositoryBySlug,
   getRepositoryHealth,
   getRunDetail,
-  getRunRequestDetail,
-  heartbeatRunProcess,
+  getPullRequestDetail,
+  getStepRunDetail,
+  getStepSpecsForRepository,
+  heartbeatProcessRun,
   listRepositoryRuns,
-  listProcessSpecSummaries,
-  listRunProcesses,
+  listStepSpecSummaries,
   migrateDatabase,
+  processRunBelongsToStepRun,
+  processRunLeaseIsActive,
   recordArtifact,
   recordCheckpoint,
   recordObservation,
   recordRunEvent,
   refreshRunStatus,
-  runProcessBelongsToRun,
-  runProcessLeaseIsActive,
+  refreshStepRunStatus,
   syncRepositoryConfiguration,
   type DatabaseConnection,
   type DatabaseExecutor,
-  findReusableRun,
-  findLatestCheckpoint,
 } from "@verge/db";
 
 type ApiContext = {
@@ -112,7 +111,41 @@ const parseStringArray = (value: unknown): string[] => {
   return [];
 };
 
-const createPlannedRuns = async (
+const interruptPendingProcessesForStepRun = async (
+  db: DatabaseExecutor,
+  stepRunId: string,
+): Promise<void> => {
+  const interruptedAt = new Date();
+  const updated = await db
+    .updateTable("process_runs")
+    .set({
+      status: "interrupted",
+      finished_at: interruptedAt,
+      claimed_by: null,
+      lease_expires_at: null,
+      last_heartbeat_at: null,
+    })
+    .where("step_run_id", "=", stepRunId)
+    .where("status", "in", ["queued", "claimed", "running"])
+    .executeTakeFirst();
+
+  if (Number(updated.numUpdatedRows) > 0) {
+    await db
+      .insertInto("run_events")
+      .values({
+        id: randomUUID(),
+        step_run_id: stepRunId,
+        process_run_id: null,
+        kind: "interrupted",
+        message: "Pending processes were transferred to a resumed step",
+        payload: JSON.stringify({ reason: "checkpoint-resume-transfer" }),
+      })
+      .execute();
+    await refreshStepRunStatus(db, stepRunId);
+  }
+};
+
+const createPlannedRun = async (
   db: DatabaseExecutor,
   repository: {
     id: string;
@@ -125,19 +158,19 @@ const createPlannedRuns = async (
     commitSha: string;
     branch?: string;
     changedFiles?: string[];
-    requestedProcessSpecKeys?: string[];
+    requestedStepKeys?: string[];
     resumeFromCheckpoint?: boolean;
     disableReuse?: boolean;
     pullRequestNumber?: number;
     eventIngestionId?: string;
   },
 ): Promise<{
-  runRequestId: string;
-  runIds: string[];
+  runId: string;
+  stepRunIds: string[];
 }> => {
-  const processSpecs = await getProcessSpecsForRepository(db, repository.id);
+  const stepSpecs = await getStepSpecsForRepository(db, repository.id);
 
-  const runRequest = await createRunRequest(db, {
+  const run = await createRun(db, {
     repositoryId: repository.id,
     trigger: input.trigger,
     commitSha: input.commitSha,
@@ -147,122 +180,153 @@ const createPlannedRuns = async (
     ...(input.pullRequestNumber ? { pullRequestNumber: input.pullRequestNumber } : {}),
   });
 
-  const plans = await planProcessSpecRuns({
+  const plans = await planStepRuns({
     repositorySlug: repository.slug,
-    processSpecs: processSpecs.map((spec) => spec.parsed_process_spec),
+    stepSpecs: stepSpecs.map((spec) => spec.parsed_step_spec),
     changedFiles: input.changedFiles ?? [],
     repository: repositoryDefinition,
     commitSha: input.commitSha,
-    ...(input.requestedProcessSpecKeys
-      ? { requestedProcessSpecKeys: input.requestedProcessSpecKeys }
-      : {}),
+    ...(input.requestedStepKeys ? { requestedStepKeys: input.requestedStepKeys } : {}),
   });
 
-  const createdRunIds: string[] = [];
+  const createdStepRunIds: string[] = [];
 
   for (const plan of plans) {
-    const specRow = processSpecs.find((spec) => spec.key === plan.processSpec.key);
-    if (!specRow) {
+    const stepSpecRow = stepSpecs.find((spec) => spec.key === plan.stepSpec.key);
+    if (!stepSpecRow) {
       continue;
     }
 
-    if (input.resumeFromCheckpoint && plan.processSpec.checkpointEnabled) {
+    const processCatalog = await db
+      .selectFrom("processes")
+      .select(["id", "key"])
+      .where("step_spec_id", "=", stepSpecRow.id)
+      .execute();
+    const processIds = new Map(processCatalog.map((process) => [process.key, process.id]));
+    const configFingerprint = computeStepConfigFingerprint(plan.stepSpec);
+
+    if (input.resumeFromCheckpoint && plan.stepSpec.checkpointEnabled) {
       const checkpoint = await findLatestCheckpoint(db, {
-        processSpecId: specRow.id,
+        repositoryId: repository.id,
+        stepKey: plan.stepSpec.key,
+        stepSpecId: stepSpecRow.id,
         fingerprint: plan.fingerprint,
       });
 
       if (checkpoint) {
         const completedProcessKeys = new Set(parseStringArray(checkpoint.completed_process_keys));
-        const pending = plan.processes.filter((process) => !completedProcessKeys.has(process.key));
+        const pendingProcesses = plan.processes.filter(
+          (process) => !completedProcessKeys.has(process.key),
+        );
 
-        const resumedRun = await createRun(db, {
-          runRequestId: runRequest.id,
-          processSpecId: specRow.id,
+        const resumedStepRun = await createStepRun(db, {
+          runId: run.id,
+          stepSpecId: stepSpecRow.id,
+          stepSpec: plan.stepSpec,
+          configFingerprint,
           fingerprint: plan.fingerprint,
-          status: pending.length === 0 ? "reused" : "queued",
+          status: pendingProcesses.length === 0 ? "reused" : "queued",
           planReason: `resumed from checkpoint ${checkpoint.id}`,
-          checkpointSourceRunId: checkpoint.run_id,
+          checkpointSourceStepRunId: checkpoint.step_run_id,
         });
 
         await cloneCompletedProcessesFromCheckpoint(db, {
-          sourceRunId: checkpoint.run_id,
-          newRunId: resumedRun.id,
+          sourceStepRunId: checkpoint.step_run_id,
+          newStepRunId: resumedStepRun.id,
           completedProcessKeys: [...completedProcessKeys],
         });
+        await interruptPendingProcessesForStepRun(db, checkpoint.step_run_id);
 
-        await createRunProcesses(db, {
-          runId: resumedRun.id,
-          processes: pending.map((process) => ({
+        await createProcessRuns(db, {
+          stepRunId: resumedStepRun.id,
+          processes: pendingProcesses.map((process) => ({
+            processId: processIds.get(process.key) ?? null,
             processKey: process.key,
-            processLabel: process.label,
-            processType: process.type,
+            displayName: process.displayName,
+            kind: process.kind,
+            filePath: process.filePath ?? null,
+            metadata: {
+              areaKeys: process.areaKeys,
+            },
             selectionPayload: {
               areaKeys: process.areaKeys,
-              command: process.command.slice(plan.processSpec.baseCommand.length),
-              filePath: process.filePath ?? null,
+              command: process.command.slice(plan.stepSpec.baseCommand.length),
             },
           })),
         });
 
-        await refreshRunStatus(db, resumedRun.id);
-        createdRunIds.push(resumedRun.id);
+        await refreshStepRunStatus(db, resumedStepRun.id);
+        createdStepRunIds.push(resumedStepRun.id);
         continue;
       }
     }
 
-    if (!input.disableReuse && plan.processSpec.reuseEnabled) {
-      const reusableRun = await findReusableRun(db, {
-        processSpecId: specRow.id,
+    if (!input.disableReuse && plan.stepSpec.reuseEnabled) {
+      const reusableStepRun = await findReusableStepRun(db, {
+        repositoryId: repository.id,
+        stepKey: plan.stepSpec.key,
+        stepSpecId: stepSpecRow.id,
         fingerprint: plan.fingerprint,
       });
 
-      if (reusableRun) {
-        const reusedRun = await createRun(db, {
-          runRequestId: runRequest.id,
-          processSpecId: specRow.id,
+      if (reusableStepRun) {
+        const reusedStepRun = await createStepRun(db, {
+          runId: run.id,
+          stepSpecId: stepSpecRow.id,
+          stepSpec: plan.stepSpec,
+          configFingerprint,
           fingerprint: plan.fingerprint,
           status: "reused",
-          planReason: `reused prior successful run ${reusableRun.id}`,
-          reusedFromRunId: reusableRun.id,
+          planReason: `reused prior successful step run ${reusableStepRun.id}`,
+          reusedFromStepRunId: reusableStepRun.id,
         });
-        await cloneRunForReuse(db, {
-          sourceRunId: reusableRun.id,
-          newRunId: reusedRun.id,
+        await cloneStepRunForReuse(db, {
+          sourceStepRunId: reusableStepRun.id,
+          newStepRunId: reusedStepRun.id,
         });
-        await refreshRunStatus(db, reusedRun.id);
-        createdRunIds.push(reusedRun.id);
+        await refreshStepRunStatus(db, reusedStepRun.id);
+        createdStepRunIds.push(reusedStepRun.id);
         continue;
       }
     }
 
-    const run = await createRun(db, {
-      runRequestId: runRequest.id,
-      processSpecId: specRow.id,
+    const stepRun = await createStepRun(db, {
+      runId: run.id,
+      stepSpecId: stepSpecRow.id,
+      stepSpec: plan.stepSpec,
+      configFingerprint,
       fingerprint: plan.fingerprint,
       status: "queued",
       planReason: plan.planReason,
     });
-    await createRunProcesses(db, {
-      runId: run.id,
+
+    await createProcessRuns(db, {
+      stepRunId: stepRun.id,
       processes: plan.processes.map((process) => ({
+        processId: processIds.get(process.key) ?? null,
         processKey: process.key,
-        processLabel: process.label,
-        processType: process.type,
+        displayName: process.displayName,
+        kind: process.kind,
+        filePath: process.filePath ?? null,
+        metadata: {
+          areaKeys: process.areaKeys,
+        },
         selectionPayload: {
           areaKeys: process.areaKeys,
-          command: process.command.slice(plan.processSpec.baseCommand.length),
-          filePath: process.filePath ?? null,
+          command: process.command.slice(plan.stepSpec.baseCommand.length),
         },
       })),
     });
-    await refreshRunStatus(db, run.id);
-    createdRunIds.push(run.id);
+
+    await refreshStepRunStatus(db, stepRun.id);
+    createdStepRunIds.push(stepRun.id);
   }
 
+  await refreshRunStatus(db, run.id);
+
   return {
-    runRequestId: runRequest.id,
-    runIds: createdRunIds,
+    runId: run.id,
+    stepRunIds: createdStepRunIds,
   };
 };
 
@@ -286,6 +350,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+
   await app.register(cors, {
     origin(origin, callback) {
       if (!origin || allowedOrigins.includes(origin)) {
@@ -306,19 +371,19 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
 
   app.get("/healthz", async () => ({ ok: true }));
 
-  const ensureRunProcessMutationAccess = async (
-    runId: string,
-    runProcessId: string | undefined,
+  const ensureProcessRunMutationAccess = async (
+    stepRunId: string,
+    processRunId: string | undefined,
     workerId: string | undefined,
   ): Promise<boolean> => {
-    if (!runProcessId) {
+    if (!processRunId) {
       return true;
     }
 
     if (
-      !(await runProcessBelongsToRun(context.connection.db, {
-        runId,
-        runProcessId,
+      !(await processRunBelongsToStepRun(context.connection.db, {
+        stepRunId,
+        processRunId,
       }))
     ) {
       return false;
@@ -328,32 +393,30 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
       return false;
     }
 
-    return runProcessLeaseIsActive(context.connection.db, {
-      runId,
-      runProcessId,
+    return processRunLeaseIsActive(context.connection.db, {
+      stepRunId,
+      processRunId,
       workerId,
     });
   };
 
-  app.get("/process-specs", async () =>
-    listProcessSpecSummaries(context.connection.db, context.repositorySlug),
+  app.get("/step-specs", async () =>
+    listStepSpecSummaries(context.connection.db, context.repositorySlug),
   );
 
-  app.post("/run-requests/manual", async (request, reply) => {
-    const input = createManualRunRequestInputSchema.parse(request.body);
+  app.post("/runs/manual", async (request, reply) => {
+    const input = createManualRunInputSchema.parse(request.body);
     const repository = await getRepositoryBySlug(context.connection.db, input.repositorySlug);
 
     if (!repository) {
       return reply.code(404).send({ message: "Repository not found" });
     }
 
-    return createPlannedRuns(context.connection.db, repository, context.repositoryDefinition, {
+    return createPlannedRun(context.connection.db, repository, context.repositoryDefinition, {
       trigger: "manual",
       commitSha: input.commitSha,
       ...(input.changedFiles ? { changedFiles: input.changedFiles } : {}),
-      ...(input.requestedProcessSpecKeys
-        ? { requestedProcessSpecKeys: input.requestedProcessSpecKeys }
-        : {}),
+      ...(input.requestedStepKeys ? { requestedStepKeys: input.requestedStepKeys } : {}),
       ...(input.resumeFromCheckpoint ? { resumeFromCheckpoint: input.resumeFromCheckpoint } : {}),
       ...(input.disableReuse ? { disableReuse: input.disableReuse } : {}),
       ...(input.branch ? { branch: input.branch } : {}),
@@ -403,7 +466,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
 
       if (eventName === "push") {
         const payload = githubWebhookPushPayloadSchema.parse(request.body);
-        await createPlannedRuns(trx, repository, context.repositoryDefinition, {
+        await createPlannedRun(trx, repository, context.repositoryDefinition, {
           trigger: "push",
           commitSha: payload.after,
           branch: payload.ref.replace("refs/heads/", ""),
@@ -423,7 +486,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
           } as const;
         }
 
-        await createPlannedRuns(trx, repository, context.repositoryDefinition, {
+        await createPlannedRun(trx, repository, context.repositoryDefinition, {
           trigger: "pull_request",
           commitSha: payload.pull_request.head.sha,
           branch: payload.pull_request.head.ref,
@@ -444,91 +507,111 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
     return reply.code(202).send({ ok: true, ...result });
   });
 
-  app.get("/run-requests/:id", async (request) =>
-    getRunRequestDetail(context.connection.db, (request.params as { id: string }).id),
-  );
-
   app.get("/runs/:id", async (request) =>
     getRunDetail(context.connection.db, (request.params as { id: string }).id),
   );
 
-  app.get("/runs/:id/processes", async (request) =>
-    listRunProcesses(context.connection.db, (request.params as { id: string }).id),
-  );
-
-  app.get("/runs/:id/events", async (request) => {
-    const detail = await getRunDetail(context.connection.db, (request.params as { id: string }).id);
-    return detail.events;
+  app.get("/runs/:runId/steps/:stepId", async (request, reply) => {
+    const { runId, stepId } = request.params as { runId: string; stepId: string };
+    const detail = await getStepRunDetail(context.connection.db, stepId);
+    if (detail.runId !== runId) {
+      return reply.code(404).send({ message: "Step not found for run" });
+    }
+    return detail;
   });
 
   app.post("/workers/claim", async (request) => {
     const input = workerClaimRequestSchema.parse(request.body);
     return {
-      assignment: await claimNextRunProcess(context.connection.db, {
+      assignment: await claimNextProcessRun(context.connection.db, {
         workerId: input.workerId,
       }),
     };
   });
 
-  app.post("/workers/:runId/heartbeat", async (request, reply) => {
-    const params = request.params as { runId: string };
+  app.post("/workers/steps/:stepRunId/heartbeat", async (request, reply) => {
+    const params = request.params as { stepRunId: string };
     const input = workerHeartbeatInputSchema.parse(request.body);
-    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
-      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    if (
+      !(await ensureProcessRunMutationAccess(params.stepRunId, input.processRunId, input.workerId))
+    ) {
+      return reply
+        .code(409)
+        .send({ ok: false, message: "Process run does not belong to the step run" });
     }
-    await heartbeatRunProcess(context.connection.db, {
-      runProcessId: input.runProcessId,
+
+    await heartbeatProcessRun(context.connection.db, {
+      processRunId: input.processRunId,
       workerId: input.workerId,
     });
-    return { runId: params.runId, ok: true };
+
+    return { stepRunId: params.stepRunId, ok: true };
   });
 
-  app.post("/workers/:runId/events", async (request, reply) => {
-    const params = request.params as { runId: string };
+  app.post("/workers/steps/:stepRunId/events", async (request, reply) => {
+    const params = request.params as { stepRunId: string };
     const input = appendRunEventInputSchema.parse(request.body);
-    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
-      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    if (
+      !(await ensureProcessRunMutationAccess(params.stepRunId, input.processRunId, input.workerId))
+    ) {
+      return reply
+        .code(409)
+        .send({ ok: false, message: "Process run does not belong to the step run" });
     }
-    await recordRunEvent(context.connection.db, params.runId, input);
+    await recordRunEvent(context.connection.db, params.stepRunId, input);
     return { ok: true };
   });
 
-  app.post("/workers/:runId/observations", async (request, reply) => {
-    const params = request.params as { runId: string };
+  app.post("/workers/steps/:stepRunId/observations", async (request, reply) => {
+    const params = request.params as { stepRunId: string };
     const input = recordObservationInputSchema.parse(request.body);
-    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
-      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    if (
+      !(await ensureProcessRunMutationAccess(params.stepRunId, input.processRunId, input.workerId))
+    ) {
+      return reply
+        .code(409)
+        .send({ ok: false, message: "Process run does not belong to the step run" });
     }
-    await recordObservation(context.connection.db, params.runId, input);
-    await refreshRunStatus(context.connection.db, params.runId);
+    await recordObservation(context.connection.db, params.stepRunId, input);
+    await refreshStepRunStatus(context.connection.db, params.stepRunId);
     return { ok: true };
   });
 
-  app.post("/workers/:runId/artifacts", async (request, reply) => {
-    const params = request.params as { runId: string };
+  app.post("/workers/steps/:stepRunId/artifacts", async (request, reply) => {
+    const params = request.params as { stepRunId: string };
     const input = recordArtifactInputSchema.parse(request.body);
-    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
-      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    if (
+      !(await ensureProcessRunMutationAccess(params.stepRunId, input.processRunId, input.workerId))
+    ) {
+      return reply
+        .code(409)
+        .send({ ok: false, message: "Process run does not belong to the step run" });
     }
-    await recordArtifact(context.connection.db, params.runId, input);
+    await recordArtifact(context.connection.db, params.stepRunId, input);
     return { ok: true };
   });
 
-  app.post("/workers/:runId/checkpoints", async (request, reply) => {
-    const params = request.params as { runId: string };
+  app.post("/workers/steps/:stepRunId/checkpoints", async (request, reply) => {
+    const params = request.params as { stepRunId: string };
     const input = recordCheckpointInputSchema.parse(request.body);
-    if (!(await ensureRunProcessMutationAccess(params.runId, input.runProcessId, input.workerId))) {
-      return reply.code(409).send({ ok: false, message: "Run process does not belong to run" });
+    if (
+      !(await ensureProcessRunMutationAccess(params.stepRunId, input.processRunId, input.workerId))
+    ) {
+      return reply
+        .code(409)
+        .send({ ok: false, message: "Process run does not belong to the step run" });
     }
-    const run = await context.connection.db
-      .selectFrom("runs")
-      .select(["process_spec_id", "fingerprint"])
-      .where("id", "=", params.runId)
+
+    const stepRun = await context.connection.db
+      .selectFrom("step_runs")
+      .select(["step_spec_id", "step_key", "fingerprint"])
+      .where("id", "=", params.stepRunId)
       .executeTakeFirstOrThrow();
 
-    await recordCheckpoint(context.connection.db, params.runId, {
-      processSpecId: run.process_spec_id,
-      fingerprint: run.fingerprint,
+    await recordCheckpoint(context.connection.db, params.stepRunId, {
+      stepSpecId: stepRun.step_spec_id,
+      stepKey: stepRun.step_key,
+      fingerprint: stepRun.fingerprint,
       checkpoint: input,
     });
     return { ok: true };

@@ -1,4 +1,4 @@
-import type { ProcessSpec } from "@verge/contracts";
+import type { StepSpec } from "@verge/contracts";
 
 import {
   computeExecutionFingerprint,
@@ -7,24 +7,24 @@ import {
   materializeProcesses,
 } from "./process-specs.js";
 
-export type PlannedProcessSpecRun = {
-  processSpec: ProcessSpec;
+export type PlannedStepRun = {
+  stepSpec: StepSpec;
   planReason: string;
   fingerprint: string;
   processes: Awaited<ReturnType<typeof materializeProcesses>>;
 };
 
-export const planProcessSpecRuns = async (input: {
+export const planStepRuns = async (input: {
   repositorySlug: string;
-  processSpecs: ProcessSpec[];
+  stepSpecs: StepSpec[];
   changedFiles: string[];
   repository: {
     slug: string;
     areas: Array<{ key: string; pathPrefixes: string[] }>;
   };
   commitSha: string;
-  requestedProcessSpecKeys?: string[];
-}): Promise<PlannedProcessSpecRun[]> => {
+  requestedStepKeys?: string[];
+}): Promise<PlannedStepRun[]> => {
   const changedAreaKeys = deriveAreaKeysFromChangedFiles(
     {
       slug: input.repository.slug,
@@ -40,29 +40,29 @@ export const planProcessSpecRuns = async (input: {
     input.changedFiles,
   );
 
-  const relevantSpecs = input.processSpecs.filter((processSpec) => {
-    if (input.requestedProcessSpecKeys?.length) {
-      return input.requestedProcessSpecKeys.includes(processSpec.key);
+  const relevantSteps = input.stepSpecs.filter((stepSpec) => {
+    if (input.requestedStepKeys?.length) {
+      return input.requestedStepKeys.includes(stepSpec.key);
     }
 
-    return isProcessSpecRelevant(processSpec, changedAreaKeys);
+    return isProcessSpecRelevant(stepSpec, changedAreaKeys);
   });
 
   return Promise.all(
-    relevantSpecs.map(async (processSpec) => {
-      const processes = await materializeProcesses(processSpec);
+    relevantSteps.map(async (stepSpec) => {
+      const processes = await materializeProcesses(stepSpec);
 
       return {
-        processSpec,
-        planReason: processSpec.alwaysRun
-          ? "always-run baseline process spec"
-          : `matched repo areas: ${processSpec.observedAreaKeys
+        stepSpec,
+        planReason: stepSpec.alwaysRun
+          ? "always-run baseline step"
+          : `matched repo areas: ${stepSpec.observedAreaKeys
               .filter((areaKey) => changedAreaKeys.includes(areaKey))
               .join(", ")}`,
         fingerprint: computeExecutionFingerprint(
           input.repositorySlug,
           input.commitSha,
-          processSpec,
+          stepSpec,
           processes,
         ),
         processes,

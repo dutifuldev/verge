@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { planProcessSpecRuns } from "./planning.js";
+import { planStepRuns } from "./planning.js";
 import {
   computeExecutionFingerprint,
   deriveAreaKeysFromChangedFiles,
@@ -9,21 +9,21 @@ import {
   materializeProcesses,
 } from "./process-specs.js";
 
-describe("process specs", () => {
+describe("step specs", () => {
   const rootPath = process.cwd();
   const repository = getSelfHostedRepositoryDefinition(rootPath);
-  const processSpecs = getSelfHostedProcessSpecs(rootPath);
+  const stepSpecs = getSelfHostedProcessSpecs(rootPath);
 
   it("materializes individual test processes", async () => {
-    const testSpec = processSpecs.find((processSpec) => processSpec.key === "test");
+    const testSpec = stepSpecs.find((stepSpec) => stepSpec.key === "test");
     expect(testSpec).toBeDefined();
 
     const processes = await materializeProcesses(testSpec!);
     expect(processes.length).toBeGreaterThan(0);
-    expect(processes.every((process) => process.type === "test")).toBe(true);
+    expect(processes.every((process) => process.kind === "test")).toBe(true);
     expect(
       processes.some(
-        (process) => process.label === "statusTone > maps successful states to the good tone",
+        (process) => process.displayName === "statusTone > maps successful states to the good tone",
       ),
     ).toBe(true);
     expect(processes.some((process) => process.filePath === "apps/web/src/App.test.tsx")).toBe(
@@ -41,9 +41,9 @@ describe("process specs", () => {
   });
 
   it("plans all baseline specs for a manual request", async () => {
-    const plans = await planProcessSpecRuns({
+    const plans = await planStepRuns({
       repositorySlug: repository.slug,
-      processSpecs,
+      stepSpecs,
       changedFiles: ["apps/api/src/index.ts"],
       repository: {
         slug: repository.slug,
@@ -55,7 +55,7 @@ describe("process specs", () => {
       commitSha: "abc123",
     });
 
-    expect(plans.map((plan) => plan.processSpec.key)).toEqual([
+    expect(plans.map((plan) => plan.stepSpec.key)).toEqual([
       "format-check",
       "lint",
       "typecheck",
@@ -66,7 +66,7 @@ describe("process specs", () => {
   }, 15_000);
 
   it("produces a stable execution fingerprint for discovered processes", async () => {
-    const testSpec = processSpecs.find((processSpec) => processSpec.key === "test");
+    const testSpec = stepSpecs.find((stepSpec) => stepSpec.key === "test");
     expect(testSpec).toBeDefined();
 
     const firstMaterialization = await materializeProcesses(testSpec!);

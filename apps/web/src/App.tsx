@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import type {
   PaginatedRunList,
-  ProcessSpecSummary,
+  StepSpecSummary,
   RepositoryHealth,
   RunDetail,
   StepRunDetail,
@@ -130,13 +130,13 @@ const shouldShowSecondaryKey = (displayName: string, key: string): boolean =>
 const shortSha = (value: string): string => value.slice(0, 7);
 
 const classifyStepExecutionMode = (
-  run: Pick<StepRunSummary, "reusedFromRunId" | "checkpointSourceRunId" | "status">,
+  run: Pick<StepRunSummary, "reusedFromStepRunId" | "checkpointSourceStepRunId" | "status">,
 ): string => {
-  if (run.reusedFromRunId) {
+  if (run.reusedFromStepRunId) {
     return "reused";
   }
 
-  if (run.checkpointSourceRunId) {
+  if (run.checkpointSourceStepRunId) {
     return "resumed";
   }
 
@@ -147,21 +147,23 @@ const classifyStepExecutionMode = (
   return "fresh";
 };
 
-const summarizeRunSteps = (steps: Array<Pick<StepRunSummary, "processSpecDisplayName">>): string =>
-  steps.map((step) => step.processSpecDisplayName).join(", ");
+const summarizeRunSteps = (steps: Array<Pick<StepRunSummary, "stepDisplayName">>): string =>
+  steps.map((step) => step.stepDisplayName).join(", ");
 
 const summarizeRunExecutionMode = (
-  steps: Array<Pick<StepRunSummary, "reusedFromRunId" | "checkpointSourceRunId" | "status">>,
+  steps: Array<
+    Pick<StepRunSummary, "reusedFromStepRunId" | "checkpointSourceStepRunId" | "status">
+  >,
 ): string => {
   if (steps.length === 0) {
     return "pending";
   }
 
-  if (steps.every((step) => step.reusedFromRunId || step.status === "reused")) {
+  if (steps.every((step) => step.reusedFromStepRunId || step.status === "reused")) {
     return "reused";
   }
 
-  if (steps.some((step) => step.checkpointSourceRunId)) {
+  if (steps.some((step) => step.checkpointSourceStepRunId)) {
     return "resumed";
   }
 
@@ -226,7 +228,7 @@ const OverviewPage = ({
   onSubmit,
 }: {
   health: RepositoryHealth | null;
-  processSpecs: ProcessSpecSummary[];
+  processSpecs: StepSpecSummary[];
   error: string | null;
   commitSha: string;
   branch: string;
@@ -263,7 +265,7 @@ const OverviewPage = ({
             <span className="summaryMeta">Visible in the current health window</span>
           </div>
           <div className="summaryCard">
-            <span className="summaryLabel">Process specs</span>
+            <span className="summaryLabel">Step specs</span>
             <strong>{processSpecs.length}</strong>
             <span className="summaryMeta">Registered for this repository</span>
           </div>
@@ -433,7 +435,7 @@ const RunsPage = ({
   onPageChange,
 }: {
   runsPage: PaginatedRunList | null;
-  processSpecs: ProcessSpecSummary[];
+  processSpecs: StepSpecSummary[];
   draftFilters: { status: string; trigger: string; stepKey: string };
   onDraftFilterChange: (key: "status" | "trigger" | "stepKey", value: string) => void;
   onApplyFilters: () => void;
@@ -680,8 +682,8 @@ const RunDetailPage = ({ run }: { run: RunDetail | null }) => {
                 <tr key={step.id}>
                   <td>
                     <div className="cellStack">
-                      <strong>{step.processSpecDisplayName}</strong>
-                      <span className="secondaryText">{step.processSpecKey}</span>
+                      <strong>{step.stepDisplayName}</strong>
+                      <span className="secondaryText">{step.stepKey}</span>
                       <span className="secondaryText clampLine">{step.planReason}</span>
                     </div>
                   </td>
@@ -763,7 +765,12 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
       return true;
     }
 
-    return [process.processLabel, process.processKey, process.processType, process.filePath ?? ""]
+    return [
+      process.processDisplayName,
+      process.processKey,
+      process.processKind,
+      process.filePath ?? "",
+    ]
       .join(" ")
       .toLowerCase()
       .includes(normalizedQuery);
@@ -773,7 +780,7 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
     <div className="pageStack">
       <section className="pageHeader">
         <div>
-          <h1>{step.processSpecDisplayName}</h1>
+          <h1>{step.stepDisplayName}</h1>
           <p className="pageIntro">
             Part of run {shortSha(run.commitSha)}. This page contains the processes, events,
             observations, artifacts, and checkpoints for one step.
@@ -782,7 +789,7 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
         <div className="badgeRow">
           <StatusPill status={step.status} />
           <span className="subtleBadge">{classifyStepExecutionMode(step)}</span>
-          <span className="subtleBadge">{step.processSpecKey}</span>
+          <span className="subtleBadge">{step.stepKey}</span>
         </div>
       </section>
 
@@ -855,10 +862,10 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
               {visibleProcesses.map((process) => (
                 <tr key={process.id}>
                   <td>
-                    <strong>{process.processLabel}</strong>
+                    <strong>{process.processDisplayName}</strong>
                   </td>
                   <td className="monoText">{process.filePath ?? "No file"}</td>
-                  <td>{process.processType}</td>
+                  <td>{process.processKind}</td>
                   <td>
                     <StatusPill status={process.status} />
                   </td>
@@ -961,7 +968,7 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
                     <div>
                       <span className="infoLabel">Process id</span>
                       <div className="monoText breakText">
-                        {artifact.runProcessId ?? "step-level"}
+                        {artifact.processRunId ?? "step-level"}
                       </div>
                     </div>
                   </div>
@@ -1018,7 +1025,7 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
 export const App = () => {
   const [route, setRoute] = useState<AppRoute>(parseRoute());
   const [health, setHealth] = useState<RepositoryHealth | null>(null);
-  const [processSpecs, setProcessSpecs] = useState<ProcessSpecSummary[]>([]);
+  const [processSpecs, setProcessSpecs] = useState<StepSpecSummary[]>([]);
   const [runsPage, setRunsPage] = useState<PaginatedRunList | null>(null);
   const [selectedRun, setSelectedRun] = useState<RunDetail | null>(null);
   const [selectedStep, setSelectedStep] = useState<StepRunDetail | null>(null);
@@ -1061,7 +1068,7 @@ export const App = () => {
       try {
         const [nextHealth, nextSpecs] = await Promise.all([
           fetchJson<RepositoryHealth>("/repositories/verge/health"),
-          fetchJson<ProcessSpecSummary[]>("/process-specs"),
+          fetchJson<StepSpecSummary[]>("/step-specs"),
         ]);
         setHealth(nextHealth);
         setProcessSpecs(nextSpecs);
@@ -1130,10 +1137,10 @@ export const App = () => {
 
     const refresh = async (): Promise<void> => {
       try {
-        const run = await fetchJson<RunDetail>(`/run-requests/${route.runId}`);
+        const run = await fetchJson<RunDetail>(`/runs/${route.runId}`);
         setSelectedRun(run);
         if (route.name === "step") {
-          const step = await fetchJson<StepRunDetail>(`/runs/${route.stepId}`);
+          const step = await fetchJson<StepRunDetail>(`/runs/${route.runId}/steps/${route.stepId}`);
           setSelectedStep(step);
         }
       } catch (nextError) {
@@ -1155,25 +1162,22 @@ export const App = () => {
     setError(null);
 
     try {
-      const response = await fetchJson<{ runRequestId: string; runIds: string[] }>(
-        "/run-requests/manual",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            repositorySlug: "verge",
-            commitSha: commitSha.trim(),
-            branch: branch.trim() || undefined,
-            changedFiles: changedFiles
-              .split("\n")
-              .map((value) => value.trim())
-              .filter(Boolean),
-            resumeFromCheckpoint,
-          }),
-        },
-      );
+      const response = await fetchJson<{ runId: string; stepRunIds: string[] }>("/runs/manual", {
+        method: "POST",
+        body: JSON.stringify({
+          repositorySlug: "verge",
+          commitSha: commitSha.trim(),
+          branch: branch.trim() || undefined,
+          changedFiles: changedFiles
+            .split("\n")
+            .map((value) => value.trim())
+            .filter(Boolean),
+          resumeFromCheckpoint,
+        }),
+      });
 
-      if (response.runRequestId) {
-        navigate(`/runs/${response.runRequestId}`);
+      if (response.runId) {
+        navigate(`/runs/${response.runId}`);
       }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to start run");

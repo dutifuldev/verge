@@ -16,6 +16,11 @@ api_base_url="http://127.0.0.1:${api_port}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# shellcheck source=./lib/temp-db.sh
+source "$repo_root/scripts/lib/temp-db.sh"
+create_temp_database
+export DATABASE_URL="$VERGE_TEST_DATABASE_URL"
+
 pnpm db:migrate >/tmp/verge-db-migrate.log 2>&1
 pnpm exec tsx scripts/reset-db.ts >/tmp/verge-db-reset.log 2>&1
 
@@ -37,6 +42,7 @@ cleanup() {
   if [[ -n "${resume_worker_pid:-}" ]]; then
     wait "$resume_worker_pid" >/dev/null 2>&1 || true
   fi
+  drop_temp_database
 }
 
 trap cleanup EXIT
@@ -54,17 +60,17 @@ head_sha="$(git rev-parse HEAD)"
 manual_response="$(
   curl -sf \
     -X POST \
-    "$api_base_url/run-requests/manual" \
+    "$api_base_url/runs/manual" \
     -H "content-type: application/json" \
     --data "{\"repositorySlug\":\"verge\",\"commitSha\":\"$head_sha\",\"changedFiles\":[\"apps/api/src/app.ts\",\"apps/worker/src/index.ts\",\"packages/db/src/index.ts\"]}"
 )"
-manual_run_request_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.runRequestId);" "$manual_response")"
+manual_run_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.runId);" "$manual_response")"
 
 VERGE_API_URL="$api_base_url" pnpm exec verge worker >/tmp/verge-worker.log 2>&1 &
 worker_pid=$!
 
 for _ in $(seq 1 180); do
-  detail="$(curl -sf "$api_base_url/run-requests/$manual_run_request_id")"
+  detail="$(curl -sf "$api_base_url/runs/$manual_run_id")"
   status="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.status);" "$detail")"
   if [[ "$status" == "passed" || "$status" == "reused" ]]; then
     break
@@ -77,7 +83,7 @@ for _ in $(seq 1 180); do
   sleep 1
 done
 
-manual_detail="$(curl -sf "$api_base_url/run-requests/$manual_run_request_id")"
+manual_detail="$(curl -sf "$api_base_url/runs/$manual_run_id")"
 manual_status="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.status);" "$manual_detail")"
 if [[ "$manual_status" != "passed" && "$manual_status" != "reused" ]]; then
   echo "Self-hosted run did not complete" >&2
@@ -92,17 +98,17 @@ unset worker_pid
 resume_seed_response="$(
   curl -sf \
     -X POST \
-    "$api_base_url/run-requests/manual" \
+    "$api_base_url/runs/manual" \
     -H "content-type: application/json" \
-    --data "{\"repositorySlug\":\"verge\",\"commitSha\":\"$head_sha\",\"requestedProcessSpecKeys\":[\"test\"],\"resumeFromCheckpoint\":false,\"disableReuse\":true}"
+    --data "{\"repositorySlug\":\"verge\",\"commitSha\":\"$head_sha\",\"requestedStepKeys\":[\"test\"],\"resumeFromCheckpoint\":false,\"disableReuse\":true}"
 )"
-resume_seed_request_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.runRequestId);" "$resume_seed_response")"
+resume_seed_run_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.runId);" "$resume_seed_response")"
 
 VERGE_API_URL="$api_base_url" pnpm exec verge worker --once >/tmp/verge-resume-seed-worker.log 2>&1
 
-seed_detail="$(curl -sf "$api_base_url/run-requests/$resume_seed_request_id")"
+seed_detail="$(curl -sf "$api_base_url/runs/$resume_seed_run_id")"
 seed_run_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.steps[0].id);" "$seed_detail")"
-seed_run_detail="$(curl -sf "$api_base_url/runs/$seed_run_id")"
+seed_run_detail="$(curl -sf "$api_base_url/runs/$resume_seed_run_id/steps/$seed_run_id")"
 seed_passed="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(String(data.processes.filter((process) => process.status === 'passed').length));" "$seed_run_detail")"
 if [[ "$seed_passed" -lt 1 ]]; then
   echo "Checkpoint seed run did not finish any process" >&2
@@ -113,18 +119,18 @@ fi
 resume_response="$(
   curl -sf \
     -X POST \
-    "$api_base_url/run-requests/manual" \
+    "$api_base_url/runs/manual" \
     -H "content-type: application/json" \
-    --data "{\"repositorySlug\":\"verge\",\"commitSha\":\"$head_sha\",\"requestedProcessSpecKeys\":[\"test\"],\"resumeFromCheckpoint\":true}"
+    --data "{\"repositorySlug\":\"verge\",\"commitSha\":\"$head_sha\",\"requestedStepKeys\":[\"test\"],\"resumeFromCheckpoint\":true}"
 )"
-resume_request_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.runRequestId);" "$resume_response")"
-resume_request_detail="$(curl -sf "$api_base_url/run-requests/$resume_request_id")"
-resume_run_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.steps[0].id);" "$resume_request_detail")"
-resume_run_detail="$(curl -sf "$api_base_url/runs/$resume_run_id")"
-checkpoint_source="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.checkpointSourceRunId ?? '');" "$resume_run_detail")"
+resume_run_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.runId);" "$resume_response")"
+resume_request_detail="$(curl -sf "$api_base_url/runs/$resume_run_id")"
+resume_step_run_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.steps[0].id);" "$resume_request_detail")"
+resume_step_detail="$(curl -sf "$api_base_url/runs/$resume_run_id/steps/$resume_step_run_id")"
+checkpoint_source="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.checkpointSourceStepRunId ?? '');" "$resume_step_detail")"
 if [[ -z "$checkpoint_source" ]]; then
   echo "Resume run did not use a checkpoint" >&2
-  echo "$resume_run_detail" >&2
+  echo "$resume_step_detail" >&2
   exit 1
 fi
 
@@ -132,7 +138,7 @@ VERGE_API_URL="$api_base_url" pnpm exec verge worker >/tmp/verge-resume-worker.l
 resume_worker_pid=$!
 
 for _ in $(seq 1 180); do
-  detail="$(curl -sf "$api_base_url/run-requests/$resume_request_id")"
+  detail="$(curl -sf "$api_base_url/runs/$resume_run_id")"
   status="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.status);" "$detail")"
   if [[ "$status" == "passed" || "$status" == "reused" ]]; then
     break
@@ -145,7 +151,7 @@ for _ in $(seq 1 180); do
   sleep 1
 done
 
-resume_final="$(curl -sf "$api_base_url/run-requests/$resume_request_id")"
+resume_final="$(curl -sf "$api_base_url/runs/$resume_run_id")"
 resume_status="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.status);" "$resume_final")"
 if [[ "$resume_status" != "passed" && "$resume_status" != "reused" ]]; then
   echo "Resume run did not complete" >&2
@@ -153,19 +159,27 @@ if [[ "$resume_status" != "passed" && "$resume_status" != "reused" ]]; then
   exit 1
 fi
 
-node - <<'NODE' "$manual_detail" "$resume_final" "$resume_run_detail"
+resume_step_final="$(curl -sf "$api_base_url/runs/$resume_run_id/steps/$resume_step_run_id")"
+resume_step_status="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.status);" "$resume_step_final")"
+if [[ "$resume_step_status" != "passed" && "$resume_step_status" != "reused" ]]; then
+  echo "Resume step did not complete" >&2
+  echo "$resume_step_final" >&2
+  exit 1
+fi
+
+node - <<'NODE' "$manual_detail" "$resume_final" "$resume_step_final"
 const manual = JSON.parse(process.argv[2]);
 const resumed = JSON.parse(process.argv[3]);
 const resumeRun = JSON.parse(process.argv[4]);
 
 const summary = {
-  selfHostedRequestStatus: manual.status,
-  selfHostedRuns: manual.steps.map((step) => ({ key: step.processSpecKey, status: step.status })),
-  resumeRequestStatus: resumed.status,
+  selfHostedRunStatus: manual.status,
+  selfHostedSteps: manual.steps.map((step) => ({ key: step.stepKey, status: step.status })),
+  resumedRunStatus: resumed.status,
   resumedRun: {
-    processSpecKey: resumeRun.processSpecKey,
+    stepKey: resumeRun.stepKey,
     status: resumeRun.status,
-    checkpointSourceRunId: resumeRun.checkpointSourceRunId,
+    checkpointSourceStepRunId: resumeRun.checkpointSourceStepRunId,
     reusedProcesses: resumeRun.processes
       .filter((process) => process.status === "reused")
       .map((process) => process.processKey),
