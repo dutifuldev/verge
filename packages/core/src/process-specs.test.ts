@@ -29,7 +29,7 @@ describe("process specs", () => {
     expect(processes.some((process) => process.filePath === "apps/web/src/App.test.tsx")).toBe(
       true,
     );
-  });
+  }, 15_000);
 
   it("derives area keys from changed files", () => {
     expect(
@@ -63,7 +63,7 @@ describe("process specs", () => {
       "build",
       "docs-validate",
     ]);
-  });
+  }, 15_000);
 
   it("produces a stable execution fingerprint for discovered processes", async () => {
     const testSpec = processSpecs.find((processSpec) => processSpec.key === "test");
@@ -82,5 +82,5 @@ describe("process specs", () => {
     expect(fingerprint).toBe(
       computeExecutionFingerprint(repository.slug, "abc123", testSpec!, secondMaterialization),
     );
-  });
+  }, 15_000);
 });

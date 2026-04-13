@@ -161,9 +161,11 @@ const buildRuntimePackages = async (packageKeys: RuntimePackageKey[]): Promise<v
     const child = spawn(binary, args, {
       cwd: workspaceRoot,
       env: process.env,
-      stdio: "inherit",
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
+    child.stdout?.on("data", (chunk: Buffer | string) => process.stderr.write(String(chunk)));
+    child.stderr?.on("data", (chunk: Buffer | string) => process.stderr.write(String(chunk)));
     child.on("error", reject);
     child.on("close", (code) => {
       if ((code ?? 1) !== 0) {
