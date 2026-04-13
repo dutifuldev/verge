@@ -170,7 +170,7 @@ export const recordObservationInputSchema = z.object({
   workerId: z.string().min(1).optional(),
   processRunId: z.string().uuid().optional(),
   processKey: z.string().optional(),
-  areaKey: z.string().optional(),
+  areaKey: z.string().nullable().optional(),
   status: observationStatusSchema,
   summary: z.record(z.string(), z.unknown()).default({}),
   executionScope: z.record(z.string(), z.unknown()).default({}),
