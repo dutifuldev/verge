@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { createVitestStep, loadVergeConfig, resolveVergeConfigPath } from "./config.js";
@@ -19,8 +22,68 @@ describe("verge config", () => {
     expect(testStep?.cwd).toBe(process.cwd());
     expect(testStep?.materialization).toMatchObject({
       kind: "discoveredProcesses",
-      discoveryCommand: ["pnpm", "exec", "verge", "discover", "vitest", "--step", "test"],
+      discoveryCommand: [
+        "pnpm",
+        "exec",
+        "verge",
+        "discover",
+        "vitest",
+        "--step",
+        "test",
+        "--config",
+        "verge.config.ts",
+      ],
     });
+  });
+
+  it("normalizes discovered-process commands for an explicit config path", async () => {
+    const repositoryRoot = process.cwd();
+    const tempDirectory = await mkdtemp(path.join(repositoryRoot, ".verge-config-"));
+    const configPath = path.join(tempDirectory, "custom.verge.config.ts");
+
+    try {
+      await writeFile(
+        configPath,
+        `import baseConfig from "../verge.config.ts";
+
+export default {
+  ...baseConfig,
+  steps: baseConfig.steps.map((step) =>
+    step.key === "test"
+      ? {
+          ...step,
+          key: "alt-test",
+          materialization: {
+            ...step.materialization,
+            discoveryCommand: ["pnpm", "exec", "verge", "discover", "vitest", "--step", "alt-test"],
+          },
+        }
+      : step,
+  ),
+};
+`,
+      );
+
+      const config = await loadVergeConfig({ configPath });
+      const testStep = config.steps.find((step) => step.key === "alt-test");
+
+      expect(testStep?.materialization).toMatchObject({
+        kind: "discoveredProcesses",
+        discoveryCommand: [
+          "pnpm",
+          "exec",
+          "verge",
+          "discover",
+          "vitest",
+          "--step",
+          "alt-test",
+          "--config",
+          path.relative(repositoryRoot, configPath),
+        ],
+      });
+    } finally {
+      await rm(tempDirectory, { recursive: true, force: true });
+    }
   });
 
   it("builds vitest steps with CLI-backed discovery", () => {

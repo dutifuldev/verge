@@ -33,6 +33,30 @@ const configFileNames = [
 export const defineVergeConfig = (config: VergeConfig): VergeConfig =>
   vergeConfigSchema.parse(config);
 
+const normalizeCommandPath = (cwd: string, targetPath: string): string => {
+  const relativePath = path.relative(cwd, targetPath);
+  return relativePath.length > 0 ? relativePath : path.basename(targetPath);
+};
+
+const normalizeDiscoveryCommand = (
+  command: string[],
+  input: {
+    cwd: string;
+    configPath: string;
+  },
+): string[] => {
+  if (command.includes("--config")) {
+    return command;
+  }
+
+  const vergeIndex = command.indexOf("verge");
+  if (vergeIndex < 0 || command[vergeIndex + 1] !== "discover") {
+    return command;
+  }
+
+  return [...command, "--config", normalizeCommandPath(input.cwd, input.configPath)];
+};
+
 export const createVitestStep = (input: {
   key: string;
   displayName: string;
@@ -102,10 +126,23 @@ export const loadVergeConfig = async (input: LoadVergeConfigInput = {}): Promise
       ...parsed.repository,
       rootPath: repositoryRoot,
     },
-    steps: parsed.steps.map((step) => ({
-      ...step,
-      cwd: path.resolve(repositoryRoot, step.cwd),
-    })),
+    steps: parsed.steps.map((step) => {
+      const cwd = path.resolve(repositoryRoot, step.cwd);
+      return {
+        ...step,
+        cwd,
+        materialization:
+          step.materialization.kind === "discoveredProcesses"
+            ? {
+                ...step.materialization,
+                discoveryCommand: normalizeDiscoveryCommand(step.materialization.discoveryCommand, {
+                  cwd,
+                  configPath,
+                }),
+              }
+            : step.materialization,
+      };
+    }),
   };
 };
 
