@@ -1451,10 +1451,11 @@ const toStepRunSummary = async (
 export const getStepRunDetail = async (
   db: Kysely<VergeDatabase>,
   stepRunId: string,
-): Promise<StepRunDetail> => {
-  const row = await selectStepRunRows(db)
-    .where("step_runs.id", "=", stepRunId)
-    .executeTakeFirstOrThrow();
+): Promise<StepRunDetail | null> => {
+  const row = await selectStepRunRows(db).where("step_runs.id", "=", stepRunId).executeTakeFirst();
+  if (!row) {
+    return null;
+  }
   const summary = await toStepRunSummary(db, row);
   const processRuns = await listProcessRuns(db, stepRunId);
   const observations = await db
@@ -1540,8 +1541,11 @@ export const getStepRunDetail = async (
 export const getRunDetail = async (
   db: Kysely<VergeDatabase>,
   runId: string,
-): Promise<RunDetail> => {
-  const run = await selectRunRows(db).where("runs.id", "=", runId).executeTakeFirstOrThrow();
+): Promise<RunDetail | null> => {
+  const run = await selectRunRows(db).where("runs.id", "=", runId).executeTakeFirst();
+  if (!run) {
+    return null;
+  }
   const stepRows = await selectStepRunRows(db)
     .where("step_runs.run_id", "=", runId)
     .orderBy("step_runs.created_at", "asc")
@@ -1689,7 +1693,9 @@ export const getCommitDetail = async (
   return {
     repositorySlug,
     commitSha,
-    runs: await Promise.all(runIds.map((run) => getRunDetail(db, run.id))),
+    runs: (await Promise.all(runIds.map((run) => getRunDetail(db, run.id)))).filter(
+      (run): run is RunDetail => run !== null,
+    ),
   };
 };
 
@@ -1710,7 +1716,9 @@ export const getPullRequestDetail = async (
   return {
     repositorySlug,
     pullRequestNumber,
-    runs: await Promise.all(runIds.map((run) => getRunDetail(db, run.id))),
+    runs: (await Promise.all(runIds.map((run) => getRunDetail(db, run.id)))).filter(
+      (run): run is RunDetail => run !== null,
+    ),
   };
 };
 

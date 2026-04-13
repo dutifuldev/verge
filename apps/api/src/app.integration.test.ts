@@ -82,6 +82,22 @@ describe.runIf(runIntegration)("api integration", () => {
     });
   }, 30_000);
 
+  it("returns 404 for missing runs and steps after a reset", async () => {
+    const runResponse = await app.inject({
+      method: "GET",
+      url: "/runs/00000000-0000-0000-0000-000000000001",
+    });
+    expect(runResponse.statusCode).toBe(404);
+    expect(runResponse.json()).toMatchObject({ message: "Run not found" });
+
+    const stepResponse = await app.inject({
+      method: "GET",
+      url: "/runs/00000000-0000-0000-0000-000000000001/steps/00000000-0000-0000-0000-000000000002",
+    });
+    expect(stepResponse.statusCode).toBe(404);
+    expect(stepResponse.json()).toMatchObject({ message: "Step not found" });
+  }, 30_000);
+
   it("ingests GitHub webhooks idempotently and exposes pull request detail", async () => {
     const pullRequestPayload = {
       action: "opened",

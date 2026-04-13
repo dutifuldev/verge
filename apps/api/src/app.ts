@@ -507,13 +507,20 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
     return reply.code(202).send({ ok: true, ...result });
   });
 
-  app.get("/runs/:id", async (request) =>
-    getRunDetail(context.connection.db, (request.params as { id: string }).id),
-  );
+  app.get("/runs/:id", async (request, reply) => {
+    const detail = await getRunDetail(context.connection.db, (request.params as { id: string }).id);
+    if (!detail) {
+      return reply.code(404).send({ message: "Run not found" });
+    }
+    return detail;
+  });
 
   app.get("/runs/:runId/steps/:stepId", async (request, reply) => {
     const { runId, stepId } = request.params as { runId: string; stepId: string };
     const detail = await getStepRunDetail(context.connection.db, stepId);
+    if (!detail) {
+      return reply.code(404).send({ message: "Step not found" });
+    }
     if (detail.runId !== runId) {
       return reply.code(404).send({ message: "Step not found for run" });
     }
@@ -657,6 +664,14 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
       void (async () => {
         try {
           const detail = await getRunDetail(context.connection.db, id);
+          if (!detail) {
+            reply.raw.write(
+              `event: error\ndata: ${JSON.stringify({ message: "Run not found", statusCode: 404 })}\n\n`,
+            );
+            clearInterval(interval);
+            reply.raw.end();
+            return;
+          }
           reply.raw.write(`data: ${JSON.stringify(detail)}\n\n`);
         } catch (error) {
           clearInterval(interval);

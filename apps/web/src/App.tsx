@@ -69,10 +69,39 @@ const fetchJson = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    const payload = await response.json().catch(() => null);
+    const message =
+      payload &&
+      typeof payload === "object" &&
+      "message" in payload &&
+      typeof payload.message === "string"
+        ? payload.message
+        : `Request failed: ${response.status}`;
+    const error = new Error(message) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
 
   return (await response.json()) as T;
+};
+
+const describeLoadError = (route: AppRoute, error: unknown, fallback: string): string => {
+  if (error instanceof Error) {
+    const status = "status" in error ? error.status : undefined;
+    if (status === 404) {
+      if (route.name === "run") {
+        return "Run not found. Old local data may have been deleted.";
+      }
+      if (route.name === "step") {
+        return "Step not found. Old local data may have been deleted.";
+      }
+      return error.message;
+    }
+
+    return error.message;
+  }
+
+  return fallback;
 };
 
 const formatDateTime = (value: string | null): string =>
@@ -215,7 +244,6 @@ const EmptyState = ({ title, body }: { title: string; body: string }) => (
 const OverviewPage = ({
   health,
   processSpecs,
-  error,
   commitSha,
   branch,
   changedFiles,
@@ -229,7 +257,6 @@ const OverviewPage = ({
 }: {
   health: RepositoryHealth | null;
   processSpecs: StepSpecSummary[];
-  error: string | null;
   commitSha: string;
   branch: string;
   changedFiles: string;
@@ -271,8 +298,6 @@ const OverviewPage = ({
           </div>
         </div>
       </section>
-
-      {error ? <div className="errorBanner">{error}</div> : null}
 
       <section className="twoColumnLayout">
         <article className="panel">
@@ -608,9 +633,14 @@ const RunsPage = ({
   );
 };
 
-const RunDetailPage = ({ run }: { run: RunDetail | null }) => {
+const RunDetailPage = ({ run, error }: { run: RunDetail | null; error: string | null }) => {
   if (!run) {
-    return <EmptyState title="Loading run" body="Fetching run detail and step summaries." />;
+    return (
+      <EmptyState
+        title={error ? "Run unavailable" : "Loading run"}
+        body={error ?? "Fetching run detail and step summaries."}
+      />
+    );
   }
 
   return (
@@ -747,7 +777,15 @@ const RunDetailPage = ({ run }: { run: RunDetail | null }) => {
   );
 };
 
-const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDetail | null }) => {
+const StepDetailPage = ({
+  run,
+  step,
+  error,
+}: {
+  run: RunDetail | null;
+  step: StepRunDetail | null;
+  error: string | null;
+}) => {
   const [processQuery, setProcessQuery] = useState("");
   const deferredProcessQuery = useDeferredValue(processQuery);
 
@@ -756,7 +794,12 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
   }, [step?.id]);
 
   if (!run || !step) {
-    return <EmptyState title="Loading step" body="Fetching step detail and process data." />;
+    return (
+      <EmptyState
+        title={error ? "Step unavailable" : "Loading step"}
+        body={error ?? "Fetching step detail and process data."}
+      />
+    );
   }
 
   const normalizedQuery = deferredProcessQuery.trim().toLowerCase();
@@ -1070,10 +1113,11 @@ export const App = () => {
           fetchJson<RepositoryHealth>("/repositories/verge/health"),
           fetchJson<StepSpecSummary[]>("/step-specs"),
         ]);
+        setError(null);
         setHealth(nextHealth);
         setProcessSpecs(nextSpecs);
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : "Failed to load overview");
+        setError(describeLoadError(route, nextError, "Failed to load overview"));
       }
     };
 
@@ -1112,9 +1156,10 @@ export const App = () => {
         const nextRunsPage = await fetchJson<PaginatedRunList>(
           `/repositories/verge/runs?${search.toString()}`,
         );
+        setError(null);
         setRunsPage(nextRunsPage);
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : "Failed to load runs");
+        setError(describeLoadError(route, nextError, "Failed to load runs"));
       }
     };
 
@@ -1143,8 +1188,9 @@ export const App = () => {
           const step = await fetchJson<StepRunDetail>(`/runs/${route.runId}/steps/${route.stepId}`);
           setSelectedStep(step);
         }
+        setError(null);
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : "Failed to load run data");
+        setError(describeLoadError(route, nextError, "Failed to load run data"));
       }
     };
 
@@ -1240,11 +1286,12 @@ export const App = () => {
         </div>
       </header>
 
+      {error ? <div className="errorBanner">{error}</div> : null}
+
       {route.name === "overview" ? (
         <OverviewPage
           health={health}
           processSpecs={processSpecs}
-          error={error}
           commitSha={commitSha}
           branch={branch}
           changedFiles={changedFiles}
@@ -1271,8 +1318,10 @@ export const App = () => {
         />
       ) : null}
 
-      {route.name === "run" ? <RunDetailPage run={selectedRun} /> : null}
-      {route.name === "step" ? <StepDetailPage run={selectedRun} step={selectedStep} /> : null}
+      {route.name === "run" ? <RunDetailPage run={selectedRun} error={error} /> : null}
+      {route.name === "step" ? (
+        <StepDetailPage run={selectedRun} step={selectedStep} error={error} />
+      ) : null}
     </main>
   );
 };
