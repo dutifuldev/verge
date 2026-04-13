@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { ProcessSpecSummary, RepositoryHealth, RunDetail } from "@verge/contracts";
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8787";
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 const currentRunIdFromHash = (): string | null => {
   const [, value] = window.location.hash.split("#/runs/");

@@ -15,7 +15,9 @@ export interface ArtifactStorage {
 }
 
 export class FilesystemArtifactStorage implements ArtifactStorage {
-  constructor(private readonly rootPath = path.resolve(".verge-artifacts")) {}
+  constructor(
+    private readonly rootPath = path.resolve(process.env.VERGE_STORAGE_ROOT ?? ".verge-artifacts"),
+  ) {}
 
   async writeText(input: StorageWriteInput): Promise<StorageWriteResult> {
     const storagePath = path.resolve(this.rootPath, input.relativePath);

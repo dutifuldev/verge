@@ -14,6 +14,13 @@ export default defineConfig({
     },
   },
   server: {
-    port: 4173,
+    port: 5173,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8787",
+        changeOrigin: false,
+        rewrite: (pathValue) => pathValue.replace(/^\/api/, ""),
+      },
+    },
   },
 });

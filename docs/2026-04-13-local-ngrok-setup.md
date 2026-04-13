@@ -16,6 +16,8 @@ The basic idea is:
 
 This keeps the deployment simple and keeps the exposed surface area small.
 
+If you later want the same one-machine shape running continuously on a server, see [Single-Host Docker Compose Deployment](./2026-04-13-single-host-docker-compose-deployment.md).
+
 ## Why This Is The Best First Setup
 
 For the current MVP, Verge is simplest when everything runs on one machine.

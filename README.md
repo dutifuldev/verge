@@ -162,6 +162,12 @@ The clean deployment shape for the current MVP is:
 - one Postgres instance
 - one persistent storage location for artifacts and checkpoints
 
+The repo also includes a single-host Docker Compose deployment path with Caddy, Postgres, API, worker, and the built web UI:
+
+- [infra/deploy/docker-compose.yml](./infra/deploy/docker-compose.yml)
+- [infra/deploy/Caddyfile](./infra/deploy/Caddyfile)
+- [.env.example](./.env.example)
+
 ## Documentation
 
 Design and planning docs live in `docs/`:
@@ -169,6 +175,8 @@ Design and planning docs live in `docs/`:
 - [2026-04-12-verge-ci-cd-control-plane.md](./docs/2026-04-12-verge-ci-cd-control-plane.md)
 - [2026-04-12-verge-basic-objects.md](./docs/2026-04-12-verge-basic-objects.md)
 - [2026-04-12-verge-mvp-implementation-plan.md](./docs/2026-04-12-verge-mvp-implementation-plan.md)
+- [2026-04-13-local-ngrok-setup.md](./docs/2026-04-13-local-ngrok-setup.md)
+- [2026-04-13-single-host-docker-compose-deployment.md](./docs/2026-04-13-single-host-docker-compose-deployment.md)
 
 ## Current Status
 

@@ -1,0 +1,17 @@
+{$VERGE_DOMAIN} {
+  encode zstd gzip
+
+  handle_path /api/* {
+    reverse_proxy api:8787
+  }
+
+  handle /webhooks/* {
+    reverse_proxy api:8787
+  }
+
+  handle {
+    root * /srv
+    try_files {path} /index.html
+    file_server
+  }
+}

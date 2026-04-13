@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - verge-postgres-data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: api
+      args:
+        VITE_API_BASE_URL: /api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      VERGE_ALLOWED_ORIGINS: ${VERGE_ALLOWED_ORIGINS}
+      HOST: 0.0.0.0
+      PORT: 8787
+      VERGE_STORAGE_ROOT: /var/lib/verge-artifacts
+    volumes:
+      - verge-artifacts:/var/lib/verge-artifacts
+    expose:
+      - "8787"
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: worker
+      args:
+        VITE_API_BASE_URL: /api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      VERGE_API_URL: http://api:8787
+      VERGE_STORAGE_ROOT: /var/lib/verge-artifacts
+    volumes:
+      - verge-artifacts:/var/lib/verge-artifacts
+
+  web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: web
+      args:
+        VITE_API_BASE_URL: /api
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      VERGE_DOMAIN: ${VERGE_DOMAIN}
+    ports:
+      - "${WEB_HTTP_PORT:-80}:80"
+      - "${WEB_HTTPS_PORT:-443}:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  verge-postgres-data:
+  verge-artifacts:
+  caddy-data:
+  caddy-config:
