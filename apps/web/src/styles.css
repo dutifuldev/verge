@@ -456,6 +456,10 @@ table {
   overflow: hidden;
 }
 
+.panelSection {
+  padding: 0 16px 16px;
+}
+
 .tableScroller {
   overflow-x: auto;
   border: 1px solid var(--border-muted);

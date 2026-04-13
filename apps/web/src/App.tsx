@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import type {
   PaginatedRunList,
@@ -746,9 +746,28 @@ const RunDetailPage = ({ run }: { run: RunDetail | null }) => {
 };
 
 const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDetail | null }) => {
+  const [processQuery, setProcessQuery] = useState("");
+  const deferredProcessQuery = useDeferredValue(processQuery);
+
+  useEffect(() => {
+    setProcessQuery("");
+  }, [step?.id]);
+
   if (!run || !step) {
     return <EmptyState title="Loading step" body="Fetching step detail and process data." />;
   }
+
+  const normalizedQuery = deferredProcessQuery.trim().toLowerCase();
+  const visibleProcesses = step.processes.filter((process) => {
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    return [process.processLabel, process.processKey, process.processType, process.filePath ?? ""]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
 
   return (
     <div className="pageStack">
@@ -804,12 +823,26 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
       <section className="panel tablePanel">
         <header className="panelHeader">
           <h2>Processes</h2>
+          <span className="secondaryText">
+            {visibleProcesses.length} of {step.processes.length}
+          </span>
         </header>
+        <div className="panelSection">
+          <label className="field">
+            <span>Filter processes</span>
+            <input
+              value={processQuery}
+              onChange={(event) => setProcessQuery(event.target.value)}
+              placeholder="Search by test name, file path, key, or status"
+            />
+          </label>
+        </div>
         <div className="tableScroller">
           <table className="dataTable">
             <thead>
               <tr>
                 <th>Process</th>
+                <th>File</th>
                 <th>Type</th>
                 <th>Status</th>
                 <th>Attempts</th>
@@ -819,14 +852,12 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
               </tr>
             </thead>
             <tbody>
-              {step.processes.map((process) => (
+              {visibleProcesses.map((process) => (
                 <tr key={process.id}>
                   <td>
-                    <div className="cellStack">
-                      <strong>{process.processLabel}</strong>
-                      <span className="secondaryText">{process.processKey}</span>
-                    </div>
+                    <strong>{process.processLabel}</strong>
                   </td>
+                  <td className="monoText">{process.filePath ?? "No file"}</td>
                   <td>{process.processType}</td>
                   <td>
                     <StatusPill status={process.status} />
@@ -840,6 +871,14 @@ const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDet
             </tbody>
           </table>
         </div>
+        {visibleProcesses.length === 0 ? (
+          <div className="panelSection">
+            <EmptyState
+              title="No processes matched"
+              body="Change the filter to see processes for this step."
+            />
+          </div>
+        ) : null}
       </section>
 
       <section className="twoColumnLayout">

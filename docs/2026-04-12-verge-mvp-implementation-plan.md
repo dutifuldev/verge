@@ -271,6 +271,7 @@ packages:
 - the initial materialization kinds should be:
   - `singleProcess`
   - `namedProcesses`
+  - `discoveredProcesses`
 - process metadata may include a file path when that exists, but file paths should not be required for every process
 - raw glob-heavy process selection should not be the primary long-term API
 
@@ -540,8 +541,9 @@ For MVP, the supported materialization kinds should be:
 
 - `singleProcess`
 - `namedProcesses`
+- `discoveredProcesses`
 
-The preferred default is `namedProcesses`.
+The preferred default should be whatever maps cleanly to the real processes a step needs to track. For some steps that may be `namedProcesses`. For others, especially tests, that should be `discoveredProcesses`.
 
 For tests, that means a project should define processes as the real tests Verge wants to track, not repo-level groupings. For other steps, the same rule applies: define the smallest meaningful tracked process for that step, such as one lint target, one build target, or one document check.
 

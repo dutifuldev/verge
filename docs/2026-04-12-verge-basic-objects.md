@@ -219,7 +219,7 @@ Plainly:
 
 Examples:
 
-- `api` and `web` are done, `worker` is still pending
+- three document checks are done and one is still pending
 - smoke scenarios A and B are done, C is left
 
 ## How The Objects Interact
@@ -258,13 +258,14 @@ Verge would do something like this:
 2. Select the `lint`, `test`, `build`, and `docs:validate` steps for that run.
 3. Materialize concrete processes for each step.
 4. For the `test` step, materialize one process per real test Verge wants to track.
-5. Execute those processes.
-6. Save events, logs, and reports while they run.
-7. Record observations such as:
+5. Run those processes and record one observation per process result.
+6. If a step supports resume, record which processes finished and which remain pending in a checkpoint.
+7. Save events, logs, and reports while they run.
+8. Record observations such as:
    - `lint` passed
    - one test failed
    - `docs:validate` passed
-8. Update area state so `docs` is fresh, `api` is fresh but failed, and unrelated areas may remain stale or unknown.
+9. Update area state so `docs` is fresh, `api` is fresh but failed, and unrelated areas may remain stale or unknown.
 
 ## Summary
 

@@ -133,7 +133,7 @@ The self-hosted steps currently cover:
 - `build`
 - `docs:validate`
 
-The smoke test boots the API and worker, creates a manual run against this repo, executes the self-hosted steps, and verifies checkpoint-based resume on the `test` step.
+The `test` step now materializes one process per individual Vitest test. The smoke test boots the API and worker, creates a manual run against this repo, executes the self-hosted steps, and verifies checkpoint-based resume on the `test` step.
 
 ## CI
 

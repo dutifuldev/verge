@@ -17,6 +17,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 pnpm db:migrate >/tmp/verge-db-migrate.log 2>&1
+pnpm exec tsx scripts/reset-db.ts >/tmp/verge-db-reset.log 2>&1
 
 PORT="$api_port" pnpm --filter @verge/api dev >/tmp/verge-api.log 2>&1 &
 api_pid=$!

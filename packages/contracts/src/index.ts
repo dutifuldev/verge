@@ -30,25 +30,31 @@ export const runTriggerSchema = z.enum(["manual", "push", "pull_request"]);
 export const processMaterializationKindSchema = z.enum([
   "singleProcess",
   "namedProcesses",
+  "discoveredProcesses",
   "fixedShards",
 ]);
 
-export const namedProcessDefinitionSchema = z.object({
+export const processDefinitionSchema = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
   areaKeys: z.array(z.string()).default([]),
   extraArgs: z.array(z.string()).default([]),
+  filePath: z.string().optional(),
   type: z.string().default("named"),
 });
 
 export const processMaterializationSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("singleProcess"),
-    process: namedProcessDefinitionSchema,
+    process: processDefinitionSchema,
   }),
   z.object({
     kind: z.literal("namedProcesses"),
-    processes: z.array(namedProcessDefinitionSchema).min(1),
+    processes: z.array(processDefinitionSchema).min(1),
+  }),
+  z.object({
+    kind: z.literal("discoveredProcesses"),
+    discoveryCommand: z.array(z.string()).min(1),
   }),
   z.object({
     kind: z.literal("fixedShards"),
@@ -226,6 +232,7 @@ export const runProcessSummarySchema = z.object({
   processKey: z.string(),
   processLabel: z.string(),
   processType: z.string(),
+  filePath: z.string().nullable(),
   status: runProcessStatusSchema,
   attemptCount: z.number().int().nonnegative(),
   startedAt: z.string().datetime().nullable(),
@@ -372,7 +379,7 @@ export type FreshnessBucket = z.infer<typeof freshnessBucketSchema>;
 export type RunTrigger = z.infer<typeof runTriggerSchema>;
 export type ProcessSpec = z.infer<typeof processSpecSchema>;
 export type RepositoryDefinition = z.infer<typeof repositoryDefinitionSchema>;
-export type NamedProcessDefinition = z.infer<typeof namedProcessDefinitionSchema>;
+export type ProcessDefinition = z.infer<typeof processDefinitionSchema>;
 export type CreateManualRunRequestInput = z.infer<typeof createManualRunRequestInputSchema>;
 export type CreateRunRequestInput = z.infer<typeof createRunRequestInputSchema>;
 export type WorkerClaimRequest = z.infer<typeof workerClaimRequestSchema>;

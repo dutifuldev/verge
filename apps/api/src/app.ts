@@ -145,7 +145,7 @@ const createPlannedRuns = async (
     ...(input.pullRequestNumber ? { pullRequestNumber: input.pullRequestNumber } : {}),
   });
 
-  const plans = planProcessSpecRuns({
+  const plans = await planProcessSpecRuns({
     repositorySlug: repository.slug,
     processSpecs: processSpecs.map((spec) => spec.parsed_process_spec),
     changedFiles: input.changedFiles ?? [],
@@ -204,6 +204,7 @@ const createPlannedRuns = async (
             selectionPayload: {
               areaKeys: process.areaKeys,
               command: process.command.slice(plan.processSpec.baseCommand.length),
+              filePath: process.filePath ?? null,
             },
           })),
         });
@@ -255,6 +256,7 @@ const createPlannedRuns = async (
         selectionPayload: {
           areaKeys: process.areaKeys,
           command: process.command.slice(plan.processSpec.baseCommand.length),
+          filePath: process.filePath ?? null,
         },
       })),
     });

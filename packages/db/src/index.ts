@@ -377,7 +377,7 @@ export const syncRepositoryConfiguration = async (
       .returningAll()
       .executeTakeFirstOrThrow();
 
-    for (const processDefinition of materializeProcesses(processSpec)) {
+    for (const processDefinition of await materializeProcesses(processSpec)) {
       await db
         .insertInto("processes")
         .values({
@@ -389,6 +389,7 @@ export const syncRepositoryConfiguration = async (
           metadata: json({
             areaKeys: processDefinition.areaKeys,
             command: processDefinition.command,
+            filePath: processDefinition.filePath ?? null,
           }),
         })
         .onConflict((oc) =>
@@ -398,6 +399,7 @@ export const syncRepositoryConfiguration = async (
             metadata: json({
               areaKeys: processDefinition.areaKeys,
               command: processDefinition.command,
+              filePath: processDefinition.filePath ?? null,
             }),
           }),
         )
@@ -1329,6 +1331,8 @@ const toStepRunDetail = async (
         processKey: process.process_key,
         processLabel: process.process_label,
         processType: process.process_type,
+        filePath:
+          parseJson<{ filePath?: string | null }>(process.selection_payload).filePath ?? null,
         status: process.status as StepRunDetail["processes"][number]["status"],
         attemptCount: process.attempt_count,
         startedAt: iso(process.started_at),

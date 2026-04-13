@@ -174,6 +174,7 @@ Recommended columns:
 
 - process key
 - label
+- file path when it exists
 - type
 - status
 - attempt count

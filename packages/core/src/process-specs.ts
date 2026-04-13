@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
 import path from "node:path";
 
-import type { NamedProcessDefinition, ProcessSpec, RepositoryDefinition } from "@verge/contracts";
+import type { ProcessDefinition, ProcessSpec, RepositoryDefinition } from "@verge/contracts";
 
 export type MaterializedProcess = {
   key: string;
   label: string;
   areaKeys: string[];
+  filePath?: string;
   type: string;
   command: string[];
 };
@@ -39,11 +41,13 @@ const named = (
   label: string,
   areaKeys: string[],
   extraArgs: string[] = [],
-): NamedProcessDefinition => ({
+  filePath?: string,
+): ProcessDefinition => ({
   key,
   label,
   areaKeys,
   extraArgs,
+  ...(filePath ? { filePath } : {}),
   type: "named",
 });
 
@@ -106,19 +110,14 @@ export const getSelfHostedProcessSpecs = (rootPath: string): ProcessSpec[] => [
   {
     key: "test",
     displayName: "Tests",
-    description: "Runs Vitest projects for the Verge workspace.",
+    description: "Runs individual Vitest tests for the Verge workspace.",
     kind: "test",
     baseCommand: ["pnpm", "exec", "vitest", "run"],
     cwd: rootPath,
     observedAreaKeys: ["api", "web", "worker", "packages"],
     materialization: {
-      kind: "namedProcesses",
-      processes: [
-        named("api", "API Tests", ["api"], ["--project", "api"]),
-        named("web", "Web Tests", ["web"], ["--project", "web"]),
-        named("worker", "Worker Tests", ["worker"], ["--project", "worker"]),
-        named("packages", "Package Tests", ["packages"], ["--project", "packages"]),
-      ],
+      kind: "discoveredProcesses",
+      discoveryCommand: ["pnpm", "exec", "tsx", "scripts/discover-vitest-processes.ts"],
     },
     reuseEnabled: true,
     checkpointEnabled: true,
@@ -158,7 +157,42 @@ export const getSelfHostedProcessSpecs = (rootPath: string): ProcessSpec[] => [
   },
 ];
 
-export const materializeProcesses = (processSpec: ProcessSpec): MaterializedProcess[] => {
+const runJsonCommand = async <T>(command: string[], cwd: string): Promise<T> => {
+  const [binary, ...args] = command;
+  if (!binary) {
+    throw new Error("Discovery command is empty");
+  }
+
+  const output = await new Promise<string>((resolve, reject) => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const child = spawn(binary, args, {
+      cwd,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    child.stdout?.on("data", (chunk: Buffer | string) => stdout.push(String(chunk)));
+    child.stderr?.on("data", (chunk: Buffer | string) => stderr.push(String(chunk)));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if ((code ?? 1) !== 0) {
+        reject(
+          new Error(`Discovery command failed with code ${code ?? 1}: ${stderr.join("").trim()}`),
+        );
+        return;
+      }
+
+      resolve(stdout.join(""));
+    });
+  });
+
+  return JSON.parse(output) as T;
+};
+
+export const materializeProcesses = async (
+  processSpec: ProcessSpec,
+): Promise<MaterializedProcess[]> => {
   const materialization = processSpec.materialization;
 
   switch (materialization.kind) {
@@ -168,6 +202,15 @@ export const materializeProcesses = (processSpec: ProcessSpec): MaterializedProc
       return materialization.processes.map((processDefinition) =>
         materializeNamed(processSpec, processDefinition),
       );
+    case "discoveredProcesses": {
+      const discovered = await runJsonCommand<ProcessDefinition[]>(
+        materialization.discoveryCommand,
+        processSpec.cwd,
+      );
+      return discovered.map((processDefinition) =>
+        materializeNamed(processSpec, processDefinition),
+      );
+    }
     case "fixedShards":
       return Array.from({ length: materialization.count }, (_, index) => {
         const shard = index + 1;
@@ -191,11 +234,12 @@ export const materializeProcesses = (processSpec: ProcessSpec): MaterializedProc
 
 const materializeNamed = (
   processSpec: ProcessSpec,
-  definition: NamedProcessDefinition,
+  definition: ProcessDefinition,
 ): MaterializedProcess => ({
   key: definition.key,
   label: definition.label,
   areaKeys: definition.areaKeys,
+  ...(definition.filePath ? { filePath: definition.filePath } : {}),
   type: definition.type,
   command: [...processSpec.baseCommand, ...definition.extraArgs],
 });
@@ -236,6 +280,7 @@ export const computeExecutionFingerprint = (
   repositorySlug: string,
   commitSha: string,
   processSpec: ProcessSpec,
+  materializedProcesses?: MaterializedProcess[],
 ): string =>
   createHash("sha256")
     .update(
@@ -243,6 +288,14 @@ export const computeExecutionFingerprint = (
         repositorySlug,
         commitSha,
         processSpec,
+        materializedProcesses: materializedProcesses?.map((process) => ({
+          key: process.key,
+          label: process.label,
+          areaKeys: process.areaKeys,
+          filePath: process.filePath ?? null,
+          type: process.type,
+          command: process.command,
+        })),
       }),
     )
     .digest("hex");
