@@ -118,6 +118,11 @@ const formatDuration = (startedAt: string | null, finishedAt: string | null): st
   return `${hours}h ${remainingMinutes}m`;
 };
 
+const normalizeLabel = (value: string): string => value.trim().toLowerCase();
+
+const shouldShowSecondaryKey = (displayName: string, key: string): boolean =>
+  normalizeLabel(displayName) !== normalizeLabel(key);
+
 const shortSha = (value: string): string => value.slice(0, 7);
 
 const classifyExecutionMode = (
@@ -215,7 +220,6 @@ const OverviewPage = ({
     <div className="pageStack">
       <section className="overviewHeader">
         <div>
-          <div className="sectionLabel">Overview</div>
           <h1>Repository health and recent evaluation state</h1>
           <p className="pageIntro">
             Track the current repository state, active work, and recent process-spec runs without
@@ -246,10 +250,7 @@ const OverviewPage = ({
       <section className="twoColumnLayout">
         <article className="panel">
           <header className="panelHeader">
-            <div>
-              <div className="sectionLabel">Manual Trigger</div>
-              <h2>Create a run request</h2>
-            </div>
+            <h2>Create a run request</h2>
           </header>
           <div className="formGrid">
             <label className="field">
@@ -298,10 +299,7 @@ const OverviewPage = ({
 
         <article className="panel">
           <header className="panelHeader">
-            <div>
-              <div className="sectionLabel">Area Health</div>
-              <h2>Repository coverage</h2>
-            </div>
+            <h2>Repository coverage</h2>
           </header>
           {health?.areaStates.length ? (
             <div className="keyValueList">
@@ -309,7 +307,9 @@ const OverviewPage = ({
                 <div className="keyValueRow" key={area.key}>
                   <div>
                     <strong>{area.displayName}</strong>
-                    <span className="secondaryText">{area.key}</span>
+                    {shouldShowSecondaryKey(area.displayName, area.key) ? (
+                      <span className="secondaryText">{area.key}</span>
+                    ) : null}
                   </div>
                   <div className="rowMeta">
                     <StatusPill status={area.latestStatus} />
@@ -330,10 +330,7 @@ const OverviewPage = ({
       <section className="twoColumnLayout">
         <article className="panel">
           <header className="panelHeader">
-            <div>
-              <div className="sectionLabel">Process Specs</div>
-              <h2>Registered evaluations</h2>
-            </div>
+            <h2>Registered evaluations</h2>
           </header>
           <div className="specGrid">
             {processSpecs.map((spec) => (
@@ -357,10 +354,7 @@ const OverviewPage = ({
 
         <article className="panel">
           <header className="panelHeader">
-            <div>
-              <div className="sectionLabel">Recent Runs</div>
-              <h2>Latest activity</h2>
-            </div>
+            <h2>Latest activity</h2>
             <a
               className="panelLink"
               href="/runs"
@@ -426,7 +420,6 @@ const RunsPage = ({
     <div className="pageStack">
       <section className="pageHeader">
         <div>
-          <div className="sectionLabel">Runs</div>
           <h1>Run history</h1>
           <p className="pageIntro">
             One row per run. This is the main operational view for browsing process-spec
@@ -437,10 +430,7 @@ const RunsPage = ({
 
       <section className="panel">
         <header className="panelHeader">
-          <div>
-            <div className="sectionLabel">Filters</div>
-            <h2>Browse runs</h2>
-          </div>
+          <h2>Browse runs</h2>
         </header>
         <div className="filterGrid">
           <label className="field">
@@ -495,10 +485,7 @@ const RunsPage = ({
 
       <section className="panel tablePanel">
         <header className="panelHeader">
-          <div>
-            <div className="sectionLabel">Results</div>
-            <h2>Paginated runs table</h2>
-          </div>
+          <h2>Runs</h2>
           <div className="secondaryText">{runsPage ? `${runsPage.total} total` : "Loading"}</div>
         </header>
         {runsPage?.items.length ? (
@@ -609,7 +596,6 @@ const RunDetailPage = ({
     <div className="pageStack">
       <section className="pageHeader">
         <div>
-          <div className="sectionLabel">Run Detail</div>
           <h1>{run.processSpecDisplayName}</h1>
           <p className="pageIntro">{run.planReason}</p>
         </div>
@@ -651,10 +637,7 @@ const RunDetailPage = ({
 
       <section className="panel tablePanel">
         <header className="panelHeader">
-          <div>
-            <div className="sectionLabel">Processes</div>
-            <h2>Processes in this run</h2>
-          </div>
+          <h2>Processes</h2>
         </header>
         <div className="tableScroller">
           <table className="dataTable">
@@ -696,10 +679,7 @@ const RunDetailPage = ({
       <section className="twoColumnLayout">
         <article className="panel">
           <header className="panelHeader">
-            <div>
-              <div className="sectionLabel">Events</div>
-              <h2>Lifecycle</h2>
-            </div>
+            <h2>Events</h2>
           </header>
           {run.events.length ? (
             <div className="stackList">
@@ -723,10 +703,7 @@ const RunDetailPage = ({
 
         <article className="panel">
           <header className="panelHeader">
-            <div>
-              <div className="sectionLabel">Observations</div>
-              <h2>Recorded evidence</h2>
-            </div>
+            <h2>Observations</h2>
           </header>
           {run.observations.length ? (
             <div className="stackList">
@@ -758,10 +735,7 @@ const RunDetailPage = ({
       <section className="twoColumnLayout">
         <article className="panel">
           <header className="panelHeader">
-            <div>
-              <div className="sectionLabel">Artifacts</div>
-              <h2>Stored outputs</h2>
-            </div>
+            <h2>Artifacts</h2>
           </header>
           {run.artifacts.length ? (
             <div className="stackList">
@@ -796,10 +770,7 @@ const RunDetailPage = ({
 
         <article className="panel">
           <header className="panelHeader">
-            <div>
-              <div className="sectionLabel">Checkpoints</div>
-              <h2>Resume state</h2>
-            </div>
+            <h2>Checkpoints</h2>
           </header>
           {run.checkpoints.length ? (
             <div className="stackList">
@@ -839,10 +810,7 @@ const RunDetailPage = ({
       {request ? (
         <section className="panel">
           <header className="panelHeader">
-            <div>
-              <div className="sectionLabel">Run Request</div>
-              <h2>Trigger context</h2>
-            </div>
+            <h2>Trigger context</h2>
           </header>
           <div className="infoGrid">
             <div>

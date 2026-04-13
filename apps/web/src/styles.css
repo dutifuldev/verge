@@ -205,7 +205,6 @@ table {
   color: var(--fg-muted);
 }
 
-.sectionLabel,
 .summaryLabel,
 .infoLabel {
   color: var(--fg-muted);
