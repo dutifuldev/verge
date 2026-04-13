@@ -24,6 +24,15 @@ Suggested repository name:
 
 - `dutifulbob/verge-testbed`
 
+## Role In Validation
+
+Verge should keep both repositories as first-class validation targets.
+
+- the Verge repo proves self-hosting on the real product codebase
+- `verge-testbed` proves controlled behavior under deliberate failure, flake, slow, and resume scenarios
+
+These are different jobs. The Verge repo is the sanity check that the product can operate on itself. `verge-testbed` is the adversarial fixture that makes tricky behavior reproducible.
+
 ## Core Rule
 
 The test repository should still follow the same product model as any normal repository:
@@ -266,6 +275,12 @@ The deterministic resume fixture specifically enables a reliable proof that:
 - one run can fail partway through
 - a later run can resume from that checkpoint
 - already-passed test processes are not rerun
+
+This repository should not replace the Verge repo as a validation target. The intended model is:
+
+- keep Verge as the self-hosting proof
+- keep `verge-testbed` as the controlled proving ground
+- require new Verge behavior to hold up against both
 
 ## Immediate Next Steps
 

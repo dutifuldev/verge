@@ -683,6 +683,19 @@ The self-hosting bar for MVP should be:
 - Verge executes at least one real Verge step through its own worker path
 - Verge records the resulting evidence and exposes it in its own UI
 
+## Dual Validation Requirement
+
+The Verge repo should remain the self-hosting sanity check, but it should not be the only proving ground.
+
+Verge should also validate itself against a separate managed fixture repository such as `dutifulbob/verge-testbed`.
+
+The roles should be:
+
+- the Verge repo proves self-hosting on the actual product codebase
+- `verge-testbed` proves deterministic failure, flake, slow, and checkpoint-resume behavior under controlled conditions
+
+New behavior should be expected to hold up against both repositories, not only one of them.
+
 ## Delivery Phases
 
 ### Phase 0: Project Bootstrap
@@ -914,7 +927,18 @@ That means:
 - persist observations, artifacts, and health state
 - expose the results through the API and dashboard
 
-### 6. Reuse and Resume Tests
+### 6. End-to-End Fixture Repository Tests
+
+Verge should also run against a separate managed fixture repository such as `dutifulbob/verge-testbed`.
+
+That repository should be used to verify controlled scenarios that are awkward to prove on the Verge repo itself, including:
+
+- deterministic failure
+- flaky behavior
+- slow processes
+- checkpoint and resume flows where some processes pass before another fails
+
+### 7. Reuse and Resume Tests
 
 After the basic self-hosting path works, verify:
 
@@ -929,14 +953,16 @@ The acceptance bar is not just that commands ran. The acceptance bar is that Ver
 The MVP is done when a user can:
 
 1. connect one GitHub repository
-2. use the Verge repository itself as that repository
-3. receive a pull request event
-4. see Verge plan a small set of Verge repo processes
-5. watch at least one real Verge repo process execute live
-6. inspect logs, artifacts, and observations
-7. see repository areas marked fresh, stale, failed, or unknown
-8. see one run reused safely
-9. see one cooperative process resumed from a checkpoint
+2. use the Verge repository itself as one managed repository
+3. use at least one separate fixture repository as another managed repository
+4. receive a pull request event
+5. see Verge plan a small set of Verge repo processes
+6. watch at least one real Verge repo process execute live
+7. inspect logs, artifacts, and observations
+8. see repository areas marked fresh, stale, failed, or unknown
+9. see one run reused safely
+10. see one cooperative process resumed from a checkpoint
+11. verify tricky behavior such as deterministic failure and resume on the separate fixture repository
 
 ## Operational Requirements
 
