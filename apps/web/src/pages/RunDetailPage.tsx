@@ -8,7 +8,7 @@ import {
   shortSha,
   summarizeRunExecutionMode,
 } from "../lib/format.js";
-import { navigate } from "../lib/routing.js";
+import { buildStepPath, navigate } from "../lib/routing.js";
 
 export const RunDetailPage = ({ run, error }: { run: RunDetail | null; error: string | null }) => {
   if (!run) {
@@ -105,10 +105,10 @@ export const RunDetailPage = ({ run, error }: { run: RunDetail | null; error: st
                   <td>
                     <a
                       className="tableLink"
-                      href={`/runs/${run.id}/steps/${step.id}`}
+                      href={buildStepPath(run.repositorySlug, run.id, step.id)}
                       onClick={(event) => {
                         event.preventDefault();
-                        navigate(`/runs/${run.id}/steps/${step.id}`);
+                        navigate(buildStepPath(run.repositorySlug, run.id, step.id));
                       }}
                     >
                       Open step

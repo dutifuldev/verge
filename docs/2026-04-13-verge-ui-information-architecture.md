@@ -36,6 +36,17 @@ The product should have a small number of clear views:
 3. A run detail view
 4. Optional process detail views later
 
+The repository should be part of the URL. The UI should not rely on a hidden in-memory repository selector as the only source of context.
+
+Recommended route shape:
+
+- `/repos/:repo`
+- `/repos/:repo/runs`
+- `/repos/:repo/runs/:runId`
+- `/repos/:repo/runs/:runId/steps/:stepId`
+
+The repository selector should still exist, but it should navigate between repository-scoped routes instead of carrying the active repository only in local UI state.
+
 ## Repository Overview
 
 This page should answer:

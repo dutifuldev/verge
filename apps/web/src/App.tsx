@@ -7,7 +7,13 @@ import { useAppRoute } from "./hooks/use-app-route.js";
 import { useOverviewData } from "./hooks/use-overview-data.js";
 import { useRunDetailData } from "./hooks/use-run-detail-data.js";
 import { useRunsPageData } from "./hooks/use-runs-page-data.js";
-import { navigate } from "./lib/routing.js";
+import {
+  buildRepositoryOverviewPath,
+  buildRepositoryRunsPath,
+  buildRunPath,
+  buildStepPath,
+  navigate,
+} from "./lib/routing.js";
 import { statusTone } from "./lib/format.js";
 import { OverviewPage } from "./pages/OverviewPage.js";
 import { RunDetailPage } from "./pages/RunDetailPage.js";
@@ -20,10 +26,11 @@ export { statusTone } from "./lib/format.js";
 export const App = () => {
   const route = useAppRoute();
   const [repositories, setRepositories] = useState<RepositorySummary[]>([]);
-  const [selectedRepositorySlug, setSelectedRepositorySlug] = useState<string | null>(null);
+  const [preferredRepositorySlug, setPreferredRepositorySlug] = useState<string | null>(null);
   const [repositoriesError, setRepositoriesError] = useState<string | null>(null);
-  const { health, processSpecs, error: overviewError } = useOverviewData(selectedRepositorySlug);
-  const { runsPage, error: runsError } = useRunsPageData(route, selectedRepositorySlug);
+  const currentRepositorySlug = route.repositorySlug ?? preferredRepositorySlug;
+  const { health, processSpecs, error: overviewError } = useOverviewData(currentRepositorySlug);
+  const { runsPage, error: runsError } = useRunsPageData(route, currentRepositorySlug);
   const { run, step, error: runError } = useRunDetailData(route);
 
   const [commitSha, setCommitSha] = useState("");
@@ -48,7 +55,7 @@ export const App = () => {
         const nextRepositories = await fetchJson<RepositorySummary[]>("/repositories");
         setRepositories(nextRepositories);
         setRepositoriesError(null);
-        setSelectedRepositorySlug((current) => {
+        setPreferredRepositorySlug((current) => {
           const stored =
             current ??
             window.localStorage.getItem("verge:selectedRepositorySlug") ??
@@ -70,22 +77,49 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (!selectedRepositorySlug) {
+    if (!preferredRepositorySlug) {
       return;
     }
 
-    window.localStorage.setItem("verge:selectedRepositorySlug", selectedRepositorySlug);
-  }, [selectedRepositorySlug]);
+    window.localStorage.setItem("verge:selectedRepositorySlug", preferredRepositorySlug);
+  }, [preferredRepositorySlug]);
 
   useEffect(() => {
-    if (!run?.repositorySlug) {
+    if (route.repositorySlug) {
       return;
     }
 
-    setSelectedRepositorySlug((current) =>
-      current === run.repositorySlug ? current : run.repositorySlug,
-    );
-  }, [run?.repositorySlug]);
+    const fallbackRepositorySlug =
+      run?.repositorySlug ?? preferredRepositorySlug ?? repositories[0]?.slug ?? null;
+
+    if (!fallbackRepositorySlug) {
+      return;
+    }
+
+    if (route.name === "overview") {
+      navigate(buildRepositoryOverviewPath(fallbackRepositorySlug));
+      return;
+    }
+
+    if (route.name === "runs") {
+      navigate(
+        buildRepositoryRunsPath(fallbackRepositorySlug, {
+          page: route.page,
+          status: route.status,
+          trigger: route.trigger,
+          stepKey: route.stepKey,
+        }),
+      );
+      return;
+    }
+
+    if (route.name === "run") {
+      navigate(buildRunPath(fallbackRepositorySlug, route.runId));
+      return;
+    }
+
+    navigate(buildStepPath(fallbackRepositorySlug, route.runId, route.stepId));
+  }, [preferredRepositorySlug, repositories, route, run?.repositorySlug]);
 
   useEffect(() => {
     if (route.name !== "runs") {
@@ -101,9 +135,10 @@ export const App = () => {
 
   const activeRunCount = useMemo(() => health?.activeRuns.length ?? 0, [health]);
   const selectedRepository = useMemo(
-    () => repositories.find((repository) => repository.slug === selectedRepositorySlug) ?? null,
-    [repositories, selectedRepositorySlug],
+    () => repositories.find((repository) => repository.slug === currentRepositorySlug) ?? null,
+    [currentRepositorySlug, repositories],
   );
+  const selectedRepositorySlug = selectedRepository?.slug ?? null;
 
   const submitManualRun = async (): Promise<void> => {
     if (!selectedRepositorySlug) {
@@ -129,7 +164,7 @@ export const App = () => {
       });
 
       if (response.runId) {
-        navigate(`/runs/${response.runId}`);
+        navigate(buildRunPath(selectedRepositorySlug, response.runId));
       }
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to start run");
@@ -139,37 +174,56 @@ export const App = () => {
   };
 
   const applyRunFilters = (): void => {
-    const search = new URLSearchParams();
-    if (draftFilters.status) {
-      search.set("status", draftFilters.status);
-    }
-    if (draftFilters.trigger) {
-      search.set("trigger", draftFilters.trigger);
-    }
-    if (draftFilters.stepKey) {
-      search.set("stepKey", draftFilters.stepKey);
-    }
-    search.set("page", "1");
-    navigate(`/runs?${search.toString()}`);
-  };
-
-  const changeRunsPage = (page: number): void => {
-    if (route.name !== "runs") {
+    if (!selectedRepositorySlug) {
       return;
     }
 
-    const search = new URLSearchParams();
-    if (route.status) {
-      search.set("status", route.status);
+    navigate(
+      buildRepositoryRunsPath(selectedRepositorySlug, {
+        page: 1,
+        status: draftFilters.status,
+        trigger: draftFilters.trigger,
+        stepKey: draftFilters.stepKey,
+      }),
+    );
+  };
+
+  const changeRunsPage = (page: number): void => {
+    if (route.name !== "runs" || !selectedRepositorySlug) {
+      return;
     }
-    if (route.trigger) {
-      search.set("trigger", route.trigger);
+
+    navigate(
+      buildRepositoryRunsPath(selectedRepositorySlug, {
+        page,
+        status: route.status,
+        trigger: route.trigger,
+        stepKey: route.stepKey,
+      }),
+    );
+  };
+
+  const navigateToRepository = (nextRepositorySlug: string): void => {
+    setPreferredRepositorySlug(nextRepositorySlug);
+
+    if (route.name === "overview") {
+      navigate(buildRepositoryOverviewPath(nextRepositorySlug));
+      return;
     }
-    if (route.stepKey) {
-      search.set("stepKey", route.stepKey);
+
+    if (route.name === "runs") {
+      navigate(
+        buildRepositoryRunsPath(nextRepositorySlug, {
+          page: route.page,
+          status: route.status,
+          trigger: route.trigger,
+          stepKey: route.stepKey,
+        }),
+      );
+      return;
     }
-    search.set("page", String(page));
-    navigate(`/runs?${search.toString()}`);
+
+    navigate(buildRepositoryRunsPath(nextRepositorySlug));
   };
 
   const error =
@@ -192,7 +246,14 @@ export const App = () => {
               className="repoPicker"
               aria-label="Repository"
               value={selectedRepositorySlug ?? ""}
-              onChange={(event) => setSelectedRepositorySlug(event.target.value || null)}
+              onChange={(event) => {
+                const nextRepositorySlug = event.target.value;
+                if (!nextRepositorySlug) {
+                  return;
+                }
+
+                navigateToRepository(nextRepositorySlug);
+              }}
             >
               {repositories.map((repository) => (
                 <option key={repository.slug} value={repository.slug}>
@@ -203,8 +264,20 @@ export const App = () => {
           </div>
         </div>
         <nav className="topnav">
-          <NavLink active={route.name === "overview"} href="/" label="Overview" />
-          <NavLink active={route.name === "runs"} href="/runs" label="Runs" />
+          <NavLink
+            active={route.name === "overview"}
+            href={
+              selectedRepositorySlug ? buildRepositoryOverviewPath(selectedRepositorySlug) : "/"
+            }
+            label="Overview"
+          />
+          <NavLink
+            active={route.name === "runs"}
+            href={
+              selectedRepositorySlug ? buildRepositoryRunsPath(selectedRepositorySlug) : "/runs"
+            }
+            label="Runs"
+          />
         </nav>
         <div className="topbarMeta">
           <StatusPill status={activeRunCount > 0 ? "running" : "passed"} />
@@ -216,6 +289,7 @@ export const App = () => {
 
       {route.name === "overview" ? (
         <OverviewPage
+          repositorySlug={selectedRepositorySlug}
           health={health}
           processSpecs={processSpecs}
           commitSha={commitSha}
@@ -233,6 +307,7 @@ export const App = () => {
 
       {route.name === "runs" ? (
         <RunsPage
+          repositorySlug={selectedRepositorySlug}
           runsPage={runsPage}
           processSpecs={processSpecs}
           draftFilters={draftFilters}

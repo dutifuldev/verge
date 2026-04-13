@@ -2,9 +2,10 @@ import type { RepositoryHealth, StepSpecSummary } from "@verge/contracts";
 
 import { EmptyState, StatusPill } from "../components/common.js";
 import { formatRelativeTime, shortSha, shouldShowSecondaryKey } from "../lib/format.js";
-import { navigate } from "../lib/routing.js";
+import { buildRepositoryRunsPath, buildRunPath, navigate } from "../lib/routing.js";
 
 export const OverviewPage = ({
+  repositorySlug,
   health,
   processSpecs,
   commitSha,
@@ -18,6 +19,7 @@ export const OverviewPage = ({
   onResumeFromCheckpointChange,
   onSubmit,
 }: {
+  repositorySlug: string | null;
   health: RepositoryHealth | null;
   processSpecs: StepSpecSummary[];
   commitSha: string;
@@ -172,10 +174,14 @@ export const OverviewPage = ({
             <h2>Latest activity</h2>
             <a
               className="panelLink"
-              href="/runs"
+              href={repositorySlug ? buildRepositoryRunsPath(repositorySlug) : "/runs"}
               onClick={(event) => {
                 event.preventDefault();
-                navigate("/runs");
+                if (!repositorySlug) {
+                  return;
+                }
+
+                navigate(buildRepositoryRunsPath(repositorySlug));
               }}
             >
               Open runs table
@@ -187,7 +193,7 @@ export const OverviewPage = ({
                 <button
                   className="listButton"
                   key={run.id}
-                  onClick={() => navigate(`/runs/${run.id}`)}
+                  onClick={() => navigate(buildRunPath(run.repositorySlug, run.id))}
                 >
                   <div>
                     <strong>{shortSha(run.commitSha)}</strong>

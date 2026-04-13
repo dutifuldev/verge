@@ -9,7 +9,7 @@ import {
   formatDuration,
   shortSha,
 } from "../lib/format.js";
-import { navigate } from "../lib/routing.js";
+import { buildRunPath, navigate } from "../lib/routing.js";
 
 export const StepDetailPage = ({
   run,
@@ -75,10 +75,10 @@ export const StepDetailPage = ({
           <h2>Context</h2>
           <a
             className="panelLink"
-            href={`/runs/${run.id}`}
+            href={buildRunPath(run.repositorySlug, run.id)}
             onClick={(event) => {
               event.preventDefault();
-              navigate(`/runs/${run.id}`);
+              navigate(buildRunPath(run.repositorySlug, run.id));
             }}
           >
             Back to run

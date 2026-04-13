@@ -9,9 +9,10 @@ import {
   summarizeRunSteps,
   shortSha,
 } from "../lib/format.js";
-import { navigate } from "../lib/routing.js";
+import { buildRunPath, navigate } from "../lib/routing.js";
 
 export const RunsPage = ({
+  repositorySlug,
   runsPage,
   processSpecs,
   draftFilters,
@@ -19,6 +20,7 @@ export const RunsPage = ({
   onApplyFilters,
   onPageChange,
 }: {
+  repositorySlug: string | null;
   runsPage: PaginatedRunList | null;
   processSpecs: StepSpecSummary[];
   draftFilters: { status: string; trigger: string; stepKey: string };
@@ -120,7 +122,10 @@ export const RunsPage = ({
                     <tr
                       key={run.id}
                       className="clickableRow"
-                      onClick={() => navigate(`/runs/${run.id}`)}
+                      onClick={() => {
+                        const targetRepositorySlug = repositorySlug ?? run.repositorySlug;
+                        navigate(buildRunPath(targetRepositorySlug, run.id));
+                      }}
                     >
                       <td>
                         <StatusPill status={run.status} />
