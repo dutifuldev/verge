@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { computeStepConfigFingerprint, planStepRuns } from "@verge/core";
+import type { RepositoryDefinition } from "@verge/contracts";
 import {
   cloneCompletedProcessesFromCheckpoint,
   cloneStepRunForReuse,
@@ -15,7 +16,6 @@ import {
   type DatabaseExecutor,
 } from "@verge/db";
 
-import type { ApiContext } from "./context.js";
 import { parseStringArray } from "./utils.js";
 
 const interruptPendingProcessesForStepRun = async (
@@ -59,7 +59,7 @@ export const createPlannedRun = async (
     slug: string;
     root_path: string;
   },
-  repositoryDefinition: ApiContext["repositoryDefinition"],
+  repositoryDefinition: Pick<RepositoryDefinition, "slug" | "areas">,
   input: {
     trigger: "manual" | "push" | "pull_request";
     commitSha: string;

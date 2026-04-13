@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { type Kysely } from "kysely";
 
-import type { RepositoryDefinition, StepSpec, StepSpecSummary } from "@verge/contracts";
+import type {
+  RepositoryDefinition,
+  RepositorySummary,
+  StepSpec,
+  StepSpecSummary,
+} from "@verge/contracts";
 import { materializeProcesses } from "@verge/core";
 
 import {
@@ -168,6 +173,49 @@ export const getRepositoryBySlug = async (
   slug: string,
 ): Promise<RepositoryRow | undefined> =>
   db.selectFrom("repositories").selectAll().where("slug", "=", slug).executeTakeFirst();
+
+export const listRepositories = async (db: Kysely<VergeDatabase>): Promise<RepositorySummary[]> => {
+  const rows = await db
+    .selectFrom("repositories")
+    .select(["slug", "display_name as displayName", "default_branch as defaultBranch"])
+    .orderBy("display_name", "asc")
+    .execute();
+
+  return rows.map((row) => ({
+    slug: row.slug,
+    displayName: row.displayName,
+    defaultBranch: row.defaultBranch,
+  }));
+};
+
+export const getRepositoryDefinitionBySlug = async (
+  db: Kysely<VergeDatabase>,
+  slug: string,
+): Promise<RepositoryDefinition | undefined> => {
+  const repository = await getRepositoryBySlug(db, slug);
+  if (!repository) {
+    return undefined;
+  }
+
+  const areaRows = await db
+    .selectFrom("repo_areas")
+    .select(["key", "display_name as displayName", "path_prefixes as pathPrefixes"])
+    .where("repository_id", "=", repository.id)
+    .orderBy("key", "asc")
+    .execute();
+
+  return {
+    slug: repository.slug,
+    displayName: repository.display_name,
+    rootPath: repository.root_path,
+    defaultBranch: repository.default_branch,
+    areas: areaRows.map((row) => ({
+      key: row.key,
+      displayName: row.displayName,
+      pathPrefixes: parseJson<string[]>(row.pathPrefixes),
+    })),
+  };
+};
 
 export const getStepSpecsForRepository = async (
   db: Kysely<VergeDatabase>,

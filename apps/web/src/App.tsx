@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import type { RepositorySummary } from "@verge/contracts";
+
 import { NavLink, StatusPill } from "./components/common.js";
 import { useAppRoute } from "./hooks/use-app-route.js";
 import { useOverviewData } from "./hooks/use-overview-data.js";
@@ -17,8 +19,11 @@ export { statusTone } from "./lib/format.js";
 
 export const App = () => {
   const route = useAppRoute();
-  const { health, processSpecs, error: overviewError } = useOverviewData();
-  const { runsPage, error: runsError } = useRunsPageData(route);
+  const [repositories, setRepositories] = useState<RepositorySummary[]>([]);
+  const [selectedRepositorySlug, setSelectedRepositorySlug] = useState<string | null>(null);
+  const [repositoriesError, setRepositoriesError] = useState<string | null>(null);
+  const { health, processSpecs, error: overviewError } = useOverviewData(selectedRepositorySlug);
+  const { runsPage, error: runsError } = useRunsPageData(route, selectedRepositorySlug);
   const { run, step, error: runError } = useRunDetailData(route);
 
   const [commitSha, setCommitSha] = useState("");
@@ -38,6 +43,51 @@ export const App = () => {
   );
 
   useEffect(() => {
+    void (async () => {
+      try {
+        const nextRepositories = await fetchJson<RepositorySummary[]>("/repositories");
+        setRepositories(nextRepositories);
+        setRepositoriesError(null);
+        setSelectedRepositorySlug((current) => {
+          const stored =
+            current ??
+            window.localStorage.getItem("verge:selectedRepositorySlug") ??
+            nextRepositories[0]?.slug ??
+            null;
+
+          if (stored && nextRepositories.some((repository) => repository.slug === stored)) {
+            return stored;
+          }
+
+          return nextRepositories[0]?.slug ?? null;
+        });
+      } catch (error) {
+        setRepositoriesError(
+          error instanceof Error ? error.message : "Failed to load repositories",
+        );
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRepositorySlug) {
+      return;
+    }
+
+    window.localStorage.setItem("verge:selectedRepositorySlug", selectedRepositorySlug);
+  }, [selectedRepositorySlug]);
+
+  useEffect(() => {
+    if (!run?.repositorySlug) {
+      return;
+    }
+
+    setSelectedRepositorySlug((current) =>
+      current === run.repositorySlug ? current : run.repositorySlug,
+    );
+  }, [run?.repositorySlug]);
+
+  useEffect(() => {
     if (route.name !== "runs") {
       return;
     }
@@ -50,8 +100,16 @@ export const App = () => {
   }, [route]);
 
   const activeRunCount = useMemo(() => health?.activeRuns.length ?? 0, [health]);
+  const selectedRepository = useMemo(
+    () => repositories.find((repository) => repository.slug === selectedRepositorySlug) ?? null,
+    [repositories, selectedRepositorySlug],
+  );
 
   const submitManualRun = async (): Promise<void> => {
+    if (!selectedRepositorySlug) {
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
 
@@ -59,7 +117,7 @@ export const App = () => {
       const response = await fetchJson<{ runId: string; stepRunIds: string[] }>("/runs/manual", {
         method: "POST",
         body: JSON.stringify({
-          repositorySlug: "verge",
+          repositorySlug: selectedRepositorySlug,
           commitSha: commitSha.trim(),
           branch: branch.trim() || undefined,
           changedFiles: changedFiles
@@ -115,6 +173,7 @@ export const App = () => {
   };
 
   const error =
+    repositoriesError ??
     submitError ??
     (route.name === "runs"
       ? runsError
@@ -129,7 +188,9 @@ export const App = () => {
           <div className="brandMark">V</div>
           <div>
             <div className="brandName">Verge</div>
-            <div className="secondaryText">Repository control plane</div>
+            <div className="secondaryText">
+              {selectedRepository?.displayName ?? "Repository control plane"}
+            </div>
           </div>
         </div>
         <nav className="topnav">
@@ -137,6 +198,18 @@ export const App = () => {
           <NavLink active={route.name === "runs"} href="/runs" label="Runs" />
         </nav>
         <div className="topbarMeta">
+          <select
+            className="repoPicker"
+            aria-label="Repository"
+            value={selectedRepositorySlug ?? ""}
+            onChange={(event) => setSelectedRepositorySlug(event.target.value || null)}
+          >
+            {repositories.map((repository) => (
+              <option key={repository.slug} value={repository.slug}>
+                {repository.displayName}
+              </option>
+            ))}
+          </select>
           <StatusPill status={activeRunCount > 0 ? "running" : "passed"} />
           <span className="secondaryText">{activeRunCount} active</span>
         </div>

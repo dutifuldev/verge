@@ -175,6 +175,12 @@ table {
   color: var(--fg-default);
 }
 
+.repoPicker {
+  width: auto;
+  min-width: 180px;
+  max-width: 240px;
+}
+
 .pageStack {
   display: grid;
   gap: 24px;

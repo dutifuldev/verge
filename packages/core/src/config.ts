@@ -21,6 +21,7 @@ import { resolveWorkspaceRoot } from "./filesystem.js";
 type LoadVergeConfigInput = {
   startDir?: string;
   configPath?: string;
+  configPaths?: string[];
 };
 
 const configFileNames = [
@@ -144,6 +145,40 @@ export const loadVergeConfig = async (input: LoadVergeConfigInput = {}): Promise
       };
     }),
   };
+};
+
+const parseConfigPaths = (value: string | undefined): string[] =>
+  (value ?? "")
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+export const loadVergeConfigs = async (
+  input: LoadVergeConfigInput = {},
+): Promise<VergeConfig[]> => {
+  const createLoadInput = (configPath: string): LoadVergeConfigInput => ({
+    ...(input.startDir ? { startDir: input.startDir } : {}),
+    configPath,
+  });
+
+  if (input.configPaths && input.configPaths.length > 0) {
+    return Promise.all(
+      input.configPaths.map((configPath) => loadVergeConfig(createLoadInput(configPath))),
+    );
+  }
+
+  if (input.configPath) {
+    return [await loadVergeConfig(input)];
+  }
+
+  const envConfigPaths = parseConfigPaths(process.env.VERGE_CONFIG_PATHS);
+  if (envConfigPaths.length > 0) {
+    return Promise.all(
+      envConfigPaths.map((configPath) => loadVergeConfig(createLoadInput(configPath))),
+    );
+  }
+
+  return [await loadVergeConfig(input)];
 };
 
 export const deriveAreaKeysForPath = (

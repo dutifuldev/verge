@@ -3,11 +3,13 @@ import type { FastifyInstance } from "fastify";
 import { createManualRunInputSchema, runListQuerySchema } from "@verge/contracts";
 import {
   getCommitDetail,
+  getRepositoryDefinitionBySlug,
   getPullRequestDetail,
   getRepositoryBySlug,
   getRepositoryHealth,
   getRunDetail,
   getStepRunDetail,
+  listRepositories,
   listRepositoryRuns,
   listStepSpecSummaries,
 } from "@verge/db";
@@ -18,19 +20,25 @@ import { createPlannedRun } from "../planning.js";
 export const registerPublicRoutes = (app: FastifyInstance, context: ApiContext): void => {
   app.get("/healthz", async () => ({ ok: true }));
 
-  app.get("/step-specs", async () =>
-    listStepSpecSummaries(context.connection.db, context.repositorySlug),
+  app.get("/repositories", async () => listRepositories(context.connection.db));
+
+  app.get("/repositories/:repo/step-specs", async (request) =>
+    listStepSpecSummaries(context.connection.db, (request.params as { repo: string }).repo),
   );
 
   app.post("/runs/manual", async (request, reply) => {
     const input = createManualRunInputSchema.parse(request.body);
     const repository = await getRepositoryBySlug(context.connection.db, input.repositorySlug);
+    const repositoryDefinition = await getRepositoryDefinitionBySlug(
+      context.connection.db,
+      input.repositorySlug,
+    );
 
-    if (!repository) {
+    if (!repository || !repositoryDefinition) {
       return reply.code(404).send({ message: "Repository not found" });
     }
 
-    return createPlannedRun(context.connection.db, repository, context.repositoryDefinition, {
+    return createPlannedRun(context.connection.db, repository, repositoryDefinition, {
       trigger: "manual",
       commitSha: input.commitSha,
       ...(input.changedFiles ? { changedFiles: input.changedFiles } : {}),

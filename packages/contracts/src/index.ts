@@ -95,6 +95,12 @@ export const repositoryDefinitionSchema = z.object({
   ),
 });
 
+export const repositorySummarySchema = z.object({
+  slug: z.string(),
+  displayName: z.string(),
+  defaultBranch: z.string(),
+});
+
 export const vergeConfigSchema = z.object({
   repository: repositoryDefinitionSchema,
   steps: z.array(stepSpecSchema).min(1),
@@ -387,6 +393,7 @@ export type FreshnessBucket = z.infer<typeof freshnessBucketSchema>;
 export type RunTrigger = z.infer<typeof runTriggerSchema>;
 export type StepSpec = z.infer<typeof stepSpecSchema>;
 export type RepositoryDefinition = z.infer<typeof repositoryDefinitionSchema>;
+export type RepositorySummary = z.infer<typeof repositorySummarySchema>;
 export type VergeConfig = z.infer<typeof vergeConfigSchema>;
 export type ProcessDefinition = z.infer<typeof processDefinitionSchema>;
 export type CreateManualRunInput = z.infer<typeof createManualRunInputSchema>;

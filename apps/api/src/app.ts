@@ -1,7 +1,7 @@
 import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyRawBody from "fastify-raw-body";
-import { loadVergeConfig } from "@verge/core";
+import { loadVergeConfigs } from "@verge/core";
 import { migrateDatabase, syncRepositoryConfiguration, type DatabaseConnection } from "@verge/db";
 
 import type { ApiContext } from "./context.js";
@@ -58,22 +58,22 @@ export const bootstrapApiApp = async (
   connection: DatabaseConnection,
   input?: {
     configPath?: string;
+    configPaths?: string[];
   },
 ): Promise<FastifyInstance> => {
-  const config = await loadVergeConfig(input);
+  const configs = await loadVergeConfigs(input);
+  const seenRepositorySlugs = new Set<string>();
 
   await migrateDatabase(connection.db);
-  await syncRepositoryConfiguration(connection.db, config.repository, config.steps);
+  for (const config of configs) {
+    if (seenRepositorySlugs.has(config.repository.slug)) {
+      throw new Error(`Duplicate repository slug: ${config.repository.slug}`);
+    }
+    seenRepositorySlugs.add(config.repository.slug);
+    await syncRepositoryConfiguration(connection.db, config.repository, config.steps);
+  }
 
   return createApiApp({
     connection,
-    repositorySlug: config.repository.slug,
-    repositoryDefinition: {
-      slug: config.repository.slug,
-      areas: config.repository.areas.map((area) => ({
-        key: area.key,
-        pathPrefixes: area.pathPrefixes,
-      })),
-    },
   });
 };
