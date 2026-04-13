@@ -153,6 +153,7 @@ export const createPlannedRun = async (
             kind: process.kind,
             filePath: process.filePath ?? null,
             metadata: {
+              areaKeys: process.areaKeys,
               filePath: process.filePath ?? null,
             },
             selectionPayload: {
@@ -216,6 +217,7 @@ export const createPlannedRun = async (
         kind: process.kind,
         filePath: process.filePath ?? null,
         metadata: {
+          areaKeys: process.areaKeys,
           filePath: process.filePath ?? null,
         },
         selectionPayload: {
