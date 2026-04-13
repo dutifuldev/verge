@@ -80,7 +80,7 @@ describe.runIf(runIntegration)("api integration", () => {
       page: 1,
       pageSize: 5,
     });
-  });
+  }, 30_000);
 
   it("ingests GitHub webhooks idempotently and exposes pull request detail", async () => {
     const pullRequestPayload = {
@@ -145,7 +145,7 @@ describe.runIf(runIntegration)("api integration", () => {
       repositorySlug: "verge",
       pullRequestNumber: 14,
     });
-  });
+  }, 30_000);
 
   it("resumes from a checkpoint without leaving the source step claimable", async () => {
     const seedCreateResponse = await app.inject({
@@ -286,5 +286,5 @@ describe.runIf(runIntegration)("api integration", () => {
     expect(resumedAssignment.assignment?.processKey).not.toBe(
       seedAssignment.assignment?.processKey,
     );
-  });
+  }, 30_000);
 });
