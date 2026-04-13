@@ -84,6 +84,8 @@ These should fail intermittently by design:
 
 These should live in explicit flaky files or an explicit flaky step so they are easy to isolate.
 
+This is useful for testing noisy behavior, but it is not enough for the main checkpoint demo. A random flake is a bad fit for a reliable resume test because the second run could fail again for unrelated randomness.
+
 ### Slow Cases
 
 These should be intentionally long-running:
@@ -99,6 +101,59 @@ These should live in explicit slow files or an explicit slow step so Verge can b
 The repository should include at least one step that is easy to checkpoint and resume:
 
 - a test step with enough individual tests that Verge can complete some processes before resuming the rest
+
+This should be a deterministic fixture, not a random flake.
+
+## Deterministic Resume Fixture
+
+The repository should contain one explicit step for the exact behavior Verge needs to prove:
+
+- the first run should fail partway through
+- some individual test processes should already have passed
+- the second run should resume from the checkpoint
+- the second run should skip the already-passed processes and only run the unfinished or previously failed ones
+
+The clean shape is:
+
+- add a dedicated step such as `test-resume`
+- mark that step as `checkpointEnabled: true`
+- keep `reuseEnabled: false` so the demo is about checkpoint resume, not cache reuse
+- include several individual tests in the step, not one monolithic command
+
+The tests inside that step should behave like this:
+
+- several tests always pass
+- one test fails the first time it is executed
+- that same test passes on the next execution
+
+The fail-once behavior should be deterministic. It should not depend on random chance.
+
+The simplest implementation is:
+
+- add a small fixture-state directory that is ignored by git
+- key that state by the process identity, such as the test process key
+- when the fail-once test runs:
+  - if its marker file does not exist, create it and fail
+  - if its marker file already exists, pass
+
+That gives Verge a stable demo:
+
+1. start the first run without `resumeFromCheckpoint`
+2. some test processes pass
+3. the fail-once test fails
+4. Verge writes a checkpoint with completed and pending process keys
+5. start the second run with `resumeFromCheckpoint`
+6. Verge reuses the completed processes from the checkpoint
+7. Verge only reruns the remaining process or processes
+8. the fail-once test now passes because its marker already exists
+
+The fixture should also include a small reset script so this scenario can be reproduced repeatedly on demand.
+
+Recommended reset shape:
+
+- `pnpm fixture:reset-resume`
+
+That script should clear only the deterministic resume markers. It should not wipe unrelated repository state.
 
 ### Change-Scoped Cases
 
@@ -120,12 +175,13 @@ Recommended steps:
 - `docs-validate`
 - `test`
 - `test-flaky`
+- `test-resume`
 - `test-slow`
 
 Important constraint:
 
 - `test` should remain the normal stable test path
-- flaky and slow behavior should be moved into explicit steps instead of polluting the default baseline
+- flaky, resume-demo, and slow behavior should be moved into explicit steps instead of polluting the default baseline
 
 That keeps the repository usable while still giving Verge deliberate stress cases.
 
@@ -205,13 +261,19 @@ With this repository in place, Verge can be tested against:
 - repository switching in the UI
 - repository-specific planning and evidence
 
+The deterministic resume fixture specifically enables a reliable proof that:
+
+- one run can fail partway through
+- a later run can resume from that checkpoint
+- already-passed test processes are not rerun
+
 ## Immediate Next Steps
 
 Before creating the repository, Verge should support multi-repository registration and routing cleanly. After that:
 
 1. Create `dutifulbob/verge-testbed`.
 2. Scaffold the repository and its `verge.config.ts`.
-3. Add stable, flaky, slow, and fail-on-demand tests.
+3. Add stable, flaky, deterministic-resume, slow, and fail-on-demand tests.
 4. Clone it onto the Verge host.
 5. Register it with this Verge instance.
 6. Add the GitHub webhook.
