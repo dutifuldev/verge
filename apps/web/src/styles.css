@@ -123,6 +123,7 @@ table {
 }
 
 .brandBlock,
+.brandPath,
 .topnav,
 .topbarMeta,
 .badgeRow,
@@ -137,23 +138,13 @@ table {
   gap: 12px;
 }
 
-.brandMark {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid rgba(47, 129, 247, 0.32);
-  border-radius: 8px;
-  background: linear-gradient(180deg, rgba(33, 38, 45, 0.96), rgba(13, 17, 23, 1));
-  color: #c9d1d9;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
 .brandName {
   font-size: 16px;
   font-weight: 600;
+}
+
+.brandSlash {
+  color: var(--fg-muted);
 }
 
 .navLink {
@@ -177,8 +168,19 @@ table {
 
 .repoPicker {
   width: auto;
-  min-width: 180px;
+  min-width: 150px;
   max-width: 240px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-default);
+  box-shadow: none;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.repoPicker:focus {
+  box-shadow: none;
 }
 
 .pageStack {

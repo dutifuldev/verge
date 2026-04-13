@@ -185,12 +185,21 @@ export const App = () => {
     <main className="appShell">
       <header className="topbar">
         <div className="brandBlock">
-          <div className="brandMark">V</div>
-          <div>
-            <div className="brandName">Verge</div>
-            <div className="secondaryText">
-              {selectedRepository?.displayName ?? "Repository control plane"}
-            </div>
+          <div className="brandPath">
+            <span className="brandName">Verge</span>
+            <span className="brandSlash">/</span>
+            <select
+              className="repoPicker"
+              aria-label="Repository"
+              value={selectedRepositorySlug ?? ""}
+              onChange={(event) => setSelectedRepositorySlug(event.target.value || null)}
+            >
+              {repositories.map((repository) => (
+                <option key={repository.slug} value={repository.slug}>
+                  {repository.displayName}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         <nav className="topnav">
@@ -198,18 +207,6 @@ export const App = () => {
           <NavLink active={route.name === "runs"} href="/runs" label="Runs" />
         </nav>
         <div className="topbarMeta">
-          <select
-            className="repoPicker"
-            aria-label="Repository"
-            value={selectedRepositorySlug ?? ""}
-            onChange={(event) => setSelectedRepositorySlug(event.target.value || null)}
-          >
-            {repositories.map((repository) => (
-              <option key={repository.slug} value={repository.slug}>
-                {repository.displayName}
-              </option>
-            ))}
-          </select>
           <StatusPill status={activeRunCount > 0 ? "running" : "passed"} />
           <span className="secondaryText">{activeRunCount} active</span>
         </div>
