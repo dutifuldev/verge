@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@verge/cli':
+        specifier: workspace:*
+        version: link:packages/cli
     devDependencies:
       '@types/node':
         specifier: ^22.17.0
@@ -93,6 +97,24 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
 
+  packages/cli:
+    dependencies:
+      '@verge/api':
+        specifier: workspace:*
+        version: link:../../apps/api
+      '@verge/core':
+        specifier: workspace:*
+        version: link:../core
+      '@verge/db':
+        specifier: workspace:*
+        version: link:../db
+      '@verge/worker':
+        specifier: workspace:*
+        version: link:../../apps/worker
+      tsx:
+        specifier: ^4.20.3
+        version: 4.21.0
+
   packages/contracts:
     dependencies:
       zod:
@@ -104,6 +126,9 @@ importers:
       '@verge/contracts':
         specifier: workspace:*
         version: link:../contracts
+      tsx:
+        specifier: ^4.20.3
+        version: 4.21.0
 
   packages/db:
     dependencies:

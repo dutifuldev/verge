@@ -19,7 +19,7 @@ cd "$repo_root"
 pnpm db:migrate >/tmp/verge-db-migrate.log 2>&1
 pnpm exec tsx scripts/reset-db.ts >/tmp/verge-db-reset.log 2>&1
 
-PORT="$api_port" pnpm --filter @verge/api dev >/tmp/verge-api.log 2>&1 &
+PORT="$api_port" pnpm exec verge api >/tmp/verge-api.log 2>&1 &
 api_pid=$!
 
 cleanup() {
@@ -60,7 +60,7 @@ manual_response="$(
 )"
 manual_run_request_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.runRequestId);" "$manual_response")"
 
-VERGE_API_URL="$api_base_url" pnpm --filter @verge/worker dev >/tmp/verge-worker.log 2>&1 &
+VERGE_API_URL="$api_base_url" pnpm exec verge worker >/tmp/verge-worker.log 2>&1 &
 worker_pid=$!
 
 for _ in $(seq 1 180); do
@@ -98,7 +98,7 @@ resume_seed_response="$(
 )"
 resume_seed_request_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.runRequestId);" "$resume_seed_response")"
 
-VERGE_API_URL="$api_base_url" pnpm --filter @verge/worker dev -- --once >/tmp/verge-resume-seed-worker.log 2>&1
+VERGE_API_URL="$api_base_url" pnpm exec verge worker --once >/tmp/verge-resume-seed-worker.log 2>&1
 
 seed_detail="$(curl -sf "$api_base_url/run-requests/$resume_seed_request_id")"
 seed_run_id="$(node -e "const data = JSON.parse(process.argv[1]); process.stdout.write(data.steps[0].id);" "$seed_detail")"
@@ -128,7 +128,7 @@ if [[ -z "$checkpoint_source" ]]; then
   exit 1
 fi
 
-VERGE_API_URL="$api_base_url" pnpm --filter @verge/worker dev >/tmp/verge-resume-worker.log 2>&1 &
+VERGE_API_URL="$api_base_url" pnpm exec verge worker >/tmp/verge-resume-worker.log 2>&1 &
 resume_worker_pid=$!
 
 for _ in $(seq 1 180); do

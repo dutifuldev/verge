@@ -93,6 +93,11 @@ export const repositoryDefinitionSchema = z.object({
   ),
 });
 
+export const vergeConfigSchema = z.object({
+  repository: repositoryDefinitionSchema,
+  steps: z.array(processSpecSchema).min(1),
+});
+
 export const createManualRunRequestInputSchema = z.object({
   repositorySlug: z.string().default("verge"),
   commitSha: z.string().min(1),
@@ -379,6 +384,7 @@ export type FreshnessBucket = z.infer<typeof freshnessBucketSchema>;
 export type RunTrigger = z.infer<typeof runTriggerSchema>;
 export type ProcessSpec = z.infer<typeof processSpecSchema>;
 export type RepositoryDefinition = z.infer<typeof repositoryDefinitionSchema>;
+export type VergeConfig = z.infer<typeof vergeConfigSchema>;
 export type ProcessDefinition = z.infer<typeof processDefinitionSchema>;
 export type CreateManualRunRequestInput = z.infer<typeof createManualRunRequestInputSchema>;
 export type CreateRunRequestInput = z.infer<typeof createRunRequestInputSchema>;

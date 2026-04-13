@@ -16,12 +16,7 @@ import {
   workerClaimRequestSchema,
   workerHeartbeatInputSchema,
 } from "@verge/contracts";
-import {
-  getSelfHostedProcessSpecs,
-  getSelfHostedRepositoryDefinition,
-  planProcessSpecRuns,
-  resolveWorkspaceRoot,
-} from "@verge/core";
+import { loadVergeConfig, planProcessSpecRuns } from "@verge/core";
 import {
   claimNextRunProcess,
   cloneCompletedProcessesFromCheckpoint,
@@ -59,6 +54,13 @@ import {
 type ApiContext = {
   connection: DatabaseConnection;
   repositorySlug: string;
+  repositoryDefinition: {
+    slug: string;
+    areas: Array<{
+      key: string;
+      pathPrefixes: string[];
+    }>;
+  };
 };
 
 const collectChangedFilesFromPushPayload = (
@@ -117,6 +119,7 @@ const createPlannedRuns = async (
     slug: string;
     root_path: string;
   },
+  repositoryDefinition: ApiContext["repositoryDefinition"],
   input: {
     trigger: "manual" | "push" | "pull_request";
     commitSha: string;
@@ -133,7 +136,6 @@ const createPlannedRuns = async (
   runIds: string[];
 }> => {
   const processSpecs = await getProcessSpecsForRepository(db, repository.id);
-  const repositoryDefinition = getSelfHostedRepositoryDefinition(repository.root_path);
 
   const runRequest = await createRunRequest(db, {
     repositoryId: repository.id,
@@ -149,13 +151,7 @@ const createPlannedRuns = async (
     repositorySlug: repository.slug,
     processSpecs: processSpecs.map((spec) => spec.parsed_process_spec),
     changedFiles: input.changedFiles ?? [],
-    repository: {
-      slug: repository.slug,
-      areas: repositoryDefinition.areas.map((area) => ({
-        key: area.key,
-        pathPrefixes: area.pathPrefixes,
-      })),
-    },
+    repository: repositoryDefinition,
     commitSha: input.commitSha,
     ...(input.requestedProcessSpecKeys
       ? { requestedProcessSpecKeys: input.requestedProcessSpecKeys }
@@ -351,7 +347,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
       return reply.code(404).send({ message: "Repository not found" });
     }
 
-    return createPlannedRuns(context.connection.db, repository, {
+    return createPlannedRuns(context.connection.db, repository, context.repositoryDefinition, {
       trigger: "manual",
       commitSha: input.commitSha,
       ...(input.changedFiles ? { changedFiles: input.changedFiles } : {}),
@@ -407,7 +403,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
 
       if (eventName === "push") {
         const payload = githubWebhookPushPayloadSchema.parse(request.body);
-        await createPlannedRuns(trx, repository, {
+        await createPlannedRuns(trx, repository, context.repositoryDefinition, {
           trigger: "push",
           commitSha: payload.after,
           branch: payload.ref.replace("refs/heads/", ""),
@@ -427,7 +423,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
           } as const;
         }
 
-        await createPlannedRuns(trx, repository, {
+        await createPlannedRuns(trx, repository, context.repositoryDefinition, {
           trigger: "pull_request",
           commitSha: payload.pull_request.head.sha,
           branch: payload.pull_request.head.ref,
@@ -614,16 +610,26 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
   return app;
 };
 
-export const bootstrapApiApp = async (connection: DatabaseConnection): Promise<FastifyInstance> => {
-  const workspaceRoot = await resolveWorkspaceRoot();
-  const repositoryDefinition = getSelfHostedRepositoryDefinition(workspaceRoot);
-  const processSpecs = getSelfHostedProcessSpecs(workspaceRoot);
+export const bootstrapApiApp = async (
+  connection: DatabaseConnection,
+  input?: {
+    configPath?: string;
+  },
+): Promise<FastifyInstance> => {
+  const config = await loadVergeConfig(input);
 
   await migrateDatabase(connection.db);
-  await syncRepositoryConfiguration(connection.db, repositoryDefinition, processSpecs);
+  await syncRepositoryConfiguration(connection.db, config.repository, config.steps);
 
   return createApiApp({
     connection,
-    repositorySlug: repositoryDefinition.slug,
+    repositorySlug: config.repository.slug,
+    repositoryDefinition: {
+      slug: config.repository.slug,
+      areas: config.repository.areas.map((area) => ({
+        key: area.key,
+        pathPrefixes: area.pathPrefixes,
+      })),
+    },
   });
 };

@@ -65,15 +65,22 @@ describe("process specs", () => {
     ]);
   });
 
-  it("produces a stable execution fingerprint", () => {
-    const firstProcessSpec = processSpecs[0];
-    expect(firstProcessSpec).toBeDefined();
+  it("produces a stable execution fingerprint for discovered processes", async () => {
+    const testSpec = processSpecs.find((processSpec) => processSpec.key === "test");
+    expect(testSpec).toBeDefined();
 
-    const fingerprint = computeExecutionFingerprint(repository.slug, "abc123", firstProcessSpec!);
+    const firstMaterialization = await materializeProcesses(testSpec!);
+    const secondMaterialization = await materializeProcesses(testSpec!);
+    const fingerprint = computeExecutionFingerprint(
+      repository.slug,
+      "abc123",
+      testSpec!,
+      firstMaterialization,
+    );
 
     expect(fingerprint).toHaveLength(64);
     expect(fingerprint).toBe(
-      computeExecutionFingerprint(repository.slug, "abc123", firstProcessSpec!),
+      computeExecutionFingerprint(repository.slug, "abc123", testSpec!, secondMaterialization),
     );
   });
 });

@@ -117,7 +117,7 @@ export const getSelfHostedProcessSpecs = (rootPath: string): ProcessSpec[] => [
     observedAreaKeys: ["api", "web", "worker", "packages"],
     materialization: {
       kind: "discoveredProcesses",
-      discoveryCommand: ["pnpm", "exec", "tsx", "scripts/discover-vitest-processes.ts"],
+      discoveryCommand: ["pnpm", "exec", "verge", "discover", "vitest", "--step", "test"],
     },
     reuseEnabled: true,
     checkpointEnabled: true,
@@ -207,9 +207,9 @@ export const materializeProcesses = async (
         materialization.discoveryCommand,
         processSpec.cwd,
       );
-      return discovered.map((processDefinition) =>
-        materializeNamed(processSpec, processDefinition),
-      );
+      return discovered
+        .map((processDefinition) => materializeNamed(processSpec, processDefinition))
+        .sort((left, right) => left.key.localeCompare(right.key));
     }
     case "fixedShards":
       return Array.from({ length: materialization.count }, (_, index) => {

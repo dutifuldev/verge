@@ -179,7 +179,7 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
   }
 };
 
-const main = async (): Promise<void> => {
+export const runWorker = async (): Promise<void> => {
   while (true) {
     let claim: { assignment: ClaimedRunProcess | null };
     try {
@@ -249,7 +249,7 @@ const isDirectExecution =
   process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isDirectExecution) {
-  void main().catch((error: unknown) => {
+  void runWorker().catch((error: unknown) => {
     console.error(error instanceof Error ? (error.stack ?? error.message) : error);
     process.exitCode = 1;
   });

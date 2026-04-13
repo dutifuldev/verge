@@ -18,6 +18,9 @@
     "jsx": "react-jsx",
     "types": ["node"],
     "paths": {
+      "@verge/api": ["apps/api/src/index.ts"],
+      "@verge/worker": ["apps/worker/src/index.ts"],
+      "@verge/cli": ["packages/cli/src/index.ts"],
       "@verge/contracts": ["packages/contracts/src/index.ts"],
       "@verge/core": ["packages/core/src/index.ts"],
       "@verge/db": ["packages/db/src/index.ts"]

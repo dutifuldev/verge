@@ -10,6 +10,8 @@ The current MVP runs Verge on the Verge repository itself.
 
 The repository currently includes:
 
+- a root `verge.config.ts` that defines the Verge repo's own steps
+- a workspace `verge` CLI for API, worker, sync, and process discovery commands
 - a Fastify API in `apps/api`
 - a React + Vite dashboard in `apps/web`
 - a long-running worker in `apps/worker`
@@ -68,6 +70,11 @@ This repo is TypeScript-first and uses:
 - `oxlint`
 - `oxfmt`
 
+The repo now also has a typed config and CLI boundary:
+
+- `verge.config.ts` as the repository contract
+- `pnpm exec verge ...` as the operational entry point
+
 ## Local Development
 
 ### Prerequisites
@@ -110,6 +117,9 @@ This starts:
 ### Useful Commands
 
 ```bash
+pnpm exec verge sync
+pnpm exec verge api
+pnpm exec verge worker
 pnpm lint
 pnpm format:check
 pnpm typecheck
@@ -179,6 +189,7 @@ Design and planning docs live in `docs/`:
 - [2026-04-12-verge-ci-cd-control-plane.md](./docs/2026-04-12-verge-ci-cd-control-plane.md)
 - [2026-04-12-verge-basic-objects.md](./docs/2026-04-12-verge-basic-objects.md)
 - [2026-04-12-verge-mvp-implementation-plan.md](./docs/2026-04-12-verge-mvp-implementation-plan.md)
+- [2026-04-13-verge-cli-and-config-architecture.md](./docs/2026-04-13-verge-cli-and-config-architecture.md)
 - [2026-04-13-local-ngrok-setup.md](./docs/2026-04-13-local-ngrok-setup.md)
 - [2026-04-13-single-host-docker-compose-deployment.md](./docs/2026-04-13-single-host-docker-compose-deployment.md)
 

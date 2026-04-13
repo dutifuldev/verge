@@ -1,0 +1,22 @@
+{
+  "name": "@verge/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "verge": "./bin/verge.mjs"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@verge/api": "workspace:*",
+    "@verge/core": "workspace:*",
+    "@verge/db": "workspace:*",
+    "@verge/worker": "workspace:*",
+    "tsx": "^4.20.3"
+  }
+}

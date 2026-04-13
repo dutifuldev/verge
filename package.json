@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,worker,web -c green,blue,magenta \"pnpm dev:api\" \"pnpm dev:worker\" \"pnpm dev:web\"",
-    "dev:api": "pnpm --filter @verge/api dev",
+    "dev:api": "pnpm exec verge api",
     "dev:web": "pnpm --filter @verge/web dev",
-    "dev:worker": "pnpm --filter @verge/worker dev",
+    "dev:worker": "pnpm exec verge worker",
     "build": "pnpm -r build",
     "lint": "pnpm exec oxlint . --deny-warnings",
     "format": "pnpm exec oxfmt --write .",
@@ -20,7 +20,11 @@
     "db:up": "docker compose -f infra/local/docker-compose.yml up -d",
     "db:down": "docker compose -f infra/local/docker-compose.yml down -v",
     "db:migrate": "pnpm --filter @verge/db migrate",
-    "db:reset": "pnpm db:down && pnpm db:up && pnpm db:migrate"
+    "db:reset": "pnpm db:down && pnpm db:up && pnpm db:migrate",
+    "sync": "pnpm exec verge sync"
+  },
+  "dependencies": {
+    "@verge/cli": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.17.0",
