@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { statusTone } from "./App.js";
+import { statusTone } from "./lib/format.js";
 
 describe("statusTone", () => {
   it("maps successful states to the good tone", () => {

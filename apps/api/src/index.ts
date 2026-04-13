@@ -1,8 +1,10 @@
+import { pathToFileURL } from "node:url";
+
 import { createDatabaseConnection } from "@verge/db";
 
 import { bootstrapApiApp } from "./app.js";
 
-const main = async (): Promise<void> => {
+export const startApiServer = async (): Promise<void> => {
   const connection = createDatabaseConnection();
   const app = await bootstrapApiApp(connection);
   const port = Number(process.env.PORT ?? 8787);
@@ -12,7 +14,14 @@ const main = async (): Promise<void> => {
   app.log.info(`Verge API listening on http://${host}:${port}`);
 };
 
-void main().catch((error: unknown) => {
-  console.error(error instanceof Error ? (error.stack ?? error.message) : error);
-  process.exitCode = 1;
-});
+export { bootstrapApiApp } from "./app.js";
+
+const isDirectExecution =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectExecution) {
+  void startApiServer().catch((error: unknown) => {
+    console.error(error instanceof Error ? (error.stack ?? error.message) : error);
+    process.exitCode = 1;
+  });
+}

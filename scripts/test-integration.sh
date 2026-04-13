@@ -7,7 +7,15 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-export VERGE_INTEGRATION_DATABASE_URL="${VERGE_INTEGRATION_DATABASE_URL:-$DATABASE_URL}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=./lib/temp-db.sh
+source "$repo_root/scripts/lib/temp-db.sh"
+
+create_temp_database
+trap drop_temp_database EXIT
+
+export DATABASE_URL="$VERGE_TEST_DATABASE_URL"
+export VERGE_INTEGRATION_DATABASE_URL="${VERGE_INTEGRATION_DATABASE_URL:-$VERGE_TEST_DATABASE_URL}"
 export GITHUB_WEBHOOK_SECRET="${GITHUB_WEBHOOK_SECRET:-integration-secret}"
 export VERGE_RUN_DB_INTEGRATION=1
 

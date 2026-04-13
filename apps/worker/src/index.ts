@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-import type { ClaimedRunProcess, StepRunDetail } from "@verge/contracts";
+import type { ClaimedProcessRun, StepRunDetail } from "@verge/contracts";
 import { FilesystemArtifactStorage } from "@verge/core";
 
 const apiBaseUrl = process.env.VERGE_API_URL ?? "http://127.0.0.1:8787";
@@ -41,12 +41,12 @@ const getJson = async <T>(urlPath: string): Promise<T> => {
   return (await response.json()) as T;
 };
 
-const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> => {
-  const artifactDir = path.join("runs", assignment.runId);
+const executeProcess = async (assignment: ClaimedProcessRun): Promise<number> => {
+  const artifactDir = path.join("runs", assignment.runId, "steps", assignment.stepRunId);
   const heartbeat = setInterval(() => {
-    void postJson(`/workers/${assignment.runId}/heartbeat`, {
+    void postJson(`/workers/steps/${assignment.stepRunId}/heartbeat`, {
       workerId,
-      runProcessId: assignment.runProcessId,
+      processRunId: assignment.processRunId,
     }).catch((error: unknown) => {
       console.error(
         error instanceof Error
@@ -56,11 +56,11 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
     });
   }, 5000);
 
-  await postJson(`/workers/${assignment.runId}/events`, {
+  await postJson(`/workers/steps/${assignment.stepRunId}/events`, {
     workerId,
-    runProcessId: assignment.runProcessId,
+    processRunId: assignment.processRunId,
     kind: "started",
-    message: `Started ${assignment.processLabel}`,
+    message: `Started ${assignment.processDisplayName}`,
   });
 
   const output: string[] = [];
@@ -79,7 +79,8 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
           ...process.env,
           VERGE_PROCESS_KEY: assignment.processKey,
           VERGE_RUN_ID: assignment.runId,
-          VERGE_RUN_PROCESS_ID: assignment.runProcessId,
+          VERGE_STEP_RUN_ID: assignment.stepRunId,
+          VERGE_PROCESS_RUN_ID: assignment.processRunId,
         },
       });
 
@@ -94,9 +95,9 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
       content: output.join(""),
     });
 
-    await postJson(`/workers/${assignment.runId}/artifacts`, {
+    await postJson(`/workers/steps/${assignment.stepRunId}/artifacts`, {
       workerId,
-      runProcessId: assignment.runProcessId,
+      processRunId: assignment.processRunId,
       artifactKey: "log",
       storagePath: logArtifact.storagePath,
       mediaType: "text/plain",
@@ -109,9 +110,9 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
     const areaKeys = normalizeObservationAreaKeys(assignment.areaKeys);
 
     for (const areaKey of areaKeys) {
-      await postJson(`/workers/${assignment.runId}/observations`, {
+      await postJson(`/workers/steps/${assignment.stepRunId}/observations`, {
         workerId,
-        runProcessId: assignment.runProcessId,
+        processRunId: assignment.processRunId,
         processKey: assignment.processKey,
         areaKey,
         status: observationStatus,
@@ -127,9 +128,11 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
     }
 
     if (assignment.checkpointEnabled) {
-      const runDetail = await getJson<StepRunDetail>(`/runs/${assignment.runId}`);
+      const stepDetail = await getJson<StepRunDetail>(
+        `/runs/${assignment.runId}/steps/${assignment.stepRunId}`,
+      );
       const completedProcessKeys = new Set(
-        runDetail.processes
+        stepDetail.processes
           .filter((process) => ["passed", "reused", "skipped"].includes(process.status))
           .map((process) => process.processKey),
       );
@@ -137,7 +140,7 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
         completedProcessKeys.add(assignment.processKey);
       }
 
-      const pendingProcessKeys = runDetail.processes
+      const pendingProcessKeys = stepDetail.processes
         .filter((process) => ["queued", "claimed", "running"].includes(process.status))
         .filter((process) => (exitCode === 0 ? process.processKey !== assignment.processKey : true))
         .map((process) => process.processKey);
@@ -153,9 +156,9 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
         ),
       });
 
-      await postJson(`/workers/${assignment.runId}/checkpoints`, {
+      await postJson(`/workers/steps/${assignment.stepRunId}/checkpoints`, {
         workerId,
-        runProcessId: assignment.runProcessId,
+        processRunId: assignment.processRunId,
         completedProcessKeys: [...completedProcessKeys],
         pendingProcessKeys,
         storagePath: checkpointArtifact.storagePath,
@@ -163,11 +166,11 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
       });
     }
 
-    await postJson(`/workers/${assignment.runId}/events`, {
+    await postJson(`/workers/steps/${assignment.stepRunId}/events`, {
       workerId,
-      runProcessId: assignment.runProcessId,
+      processRunId: assignment.processRunId,
       kind: exitCode === 0 ? "passed" : "failed",
-      message: `${assignment.processLabel} ${exitCode === 0 ? "passed" : "failed"}`,
+      message: `${assignment.processDisplayName} ${exitCode === 0 ? "passed" : "failed"}`,
       payload: {
         exitCode,
       },
@@ -179,11 +182,11 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
   }
 };
 
-const main = async (): Promise<void> => {
+export const runWorker = async (): Promise<void> => {
   while (true) {
-    let claim: { assignment: ClaimedRunProcess | null };
+    let claim: { assignment: ClaimedProcessRun | null };
     try {
-      claim = await postJson<{ assignment: ClaimedRunProcess | null }>("/workers/claim", {
+      claim = await postJson<{ assignment: ClaimedProcessRun | null }>("/workers/claim", {
         workerId,
       });
     } catch (error) {
@@ -220,11 +223,11 @@ const main = async (): Promise<void> => {
       );
 
       try {
-        await postJson(`/workers/${claim.assignment.runId}/events`, {
+        await postJson(`/workers/steps/${claim.assignment.stepRunId}/events`, {
           workerId,
-          runProcessId: claim.assignment.runProcessId,
+          processRunId: claim.assignment.processRunId,
           kind: "failed",
-          message: `Worker failed while executing ${claim.assignment.processLabel}`,
+          message: `Worker failed while executing ${claim.assignment.processDisplayName}`,
           payload: {
             error: error instanceof Error ? error.message : String(error),
           },
@@ -249,7 +252,7 @@ const isDirectExecution =
   process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isDirectExecution) {
-  void main().catch((error: unknown) => {
+  void runWorker().catch((error: unknown) => {
     console.error(error instanceof Error ? (error.stack ?? error.message) : error);
     process.exitCode = 1;
   });

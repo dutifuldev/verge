@@ -1,8 +1,8 @@
 import { createHmac } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { createDatabaseConnection, resetDatabase } from "@verge/db";
+import { createDatabaseConnection, listProcessRuns, resetDatabase } from "@verge/db";
 
 import { bootstrapApiApp } from "./app.js";
 
@@ -17,19 +17,23 @@ describe.runIf(runIntegration)("api integration", () => {
 
   beforeAll(async () => {
     process.env.GITHUB_WEBHOOK_SECRET = "integration-secret";
+  });
+
+  beforeEach(async () => {
+    await app?.close();
     await resetDatabase(connection.db).catch(() => undefined);
     app = await bootstrapApiApp(connection);
   });
 
   afterAll(async () => {
     delete process.env.GITHUB_WEBHOOK_SECRET;
-    await app.close();
+    await app?.close();
   });
 
-  it("creates a manual run request and exposes health", async () => {
+  it("creates a manual run and exposes health", async () => {
     const createResponse = await app.inject({
       method: "POST",
-      url: "/run-requests/manual",
+      url: "/runs/manual",
       payload: {
         repositorySlug: "verge",
         commitSha: "integration-sha",
@@ -39,14 +43,14 @@ describe.runIf(runIntegration)("api integration", () => {
 
     expect(createResponse.statusCode).toBe(200);
     const createPayload = createResponse.json() as {
-      runRequestId: string;
-      runIds: string[];
+      runId: string;
+      stepRunIds: string[];
     };
-    expect(createPayload.runIds.length).toBeGreaterThan(0);
+    expect(createPayload.stepRunIds.length).toBeGreaterThan(0);
 
     const detailResponse = await app.inject({
       method: "GET",
-      url: `/run-requests/${createPayload.runRequestId}`,
+      url: `/runs/${createPayload.runId}`,
     });
     expect(detailResponse.statusCode).toBe(200);
 
@@ -76,7 +80,23 @@ describe.runIf(runIntegration)("api integration", () => {
       page: 1,
       pageSize: 5,
     });
-  });
+  }, 30_000);
+
+  it("returns 404 for missing runs and steps after a reset", async () => {
+    const runResponse = await app.inject({
+      method: "GET",
+      url: "/runs/00000000-0000-0000-0000-000000000001",
+    });
+    expect(runResponse.statusCode).toBe(404);
+    expect(runResponse.json()).toMatchObject({ message: "Run not found" });
+
+    const stepResponse = await app.inject({
+      method: "GET",
+      url: "/runs/00000000-0000-0000-0000-000000000001/steps/00000000-0000-0000-0000-000000000002",
+    });
+    expect(stepResponse.statusCode).toBe(404);
+    expect(stepResponse.json()).toMatchObject({ message: "Step not found" });
+  }, 30_000);
 
   it("ingests GitHub webhooks idempotently and exposes pull request detail", async () => {
     const pullRequestPayload = {
@@ -141,5 +161,146 @@ describe.runIf(runIntegration)("api integration", () => {
       repositorySlug: "verge",
       pullRequestNumber: 14,
     });
-  });
+  }, 30_000);
+
+  it("resumes from a checkpoint without leaving the source step claimable", async () => {
+    const seedCreateResponse = await app.inject({
+      method: "POST",
+      url: "/runs/manual",
+      payload: {
+        repositorySlug: "verge",
+        commitSha: "checkpoint-seed-sha",
+        requestedStepKeys: ["test"],
+        disableReuse: true,
+      },
+    });
+
+    expect(seedCreateResponse.statusCode).toBe(200);
+    const seedCreatePayload = seedCreateResponse.json() as {
+      runId: string;
+      stepRunIds: string[];
+    };
+    const seedStepRunId = seedCreatePayload.stepRunIds[0];
+    if (!seedStepRunId) {
+      throw new Error("Seed step run was not created");
+    }
+
+    const claimResponse = await app.inject({
+      method: "POST",
+      url: "/workers/claim",
+      payload: {
+        workerId: "checkpoint-seed-worker",
+      },
+    });
+    expect(claimResponse.statusCode).toBe(200);
+    const seedAssignment = claimResponse.json() as {
+      assignment: {
+        stepRunId: string;
+        processRunId: string;
+        processKey: string;
+        areaKeys: string[];
+      } | null;
+    };
+    expect(seedAssignment.assignment?.stepRunId).toBe(seedStepRunId);
+
+    await app.inject({
+      method: "POST",
+      url: `/workers/steps/${seedStepRunId}/events`,
+      payload: {
+        workerId: "checkpoint-seed-worker",
+        processRunId: seedAssignment.assignment?.processRunId,
+        kind: "started",
+        message: "Started checkpoint seed process",
+      },
+    });
+
+    await app.inject({
+      method: "POST",
+      url: `/workers/steps/${seedStepRunId}/observations`,
+      payload: {
+        workerId: "checkpoint-seed-worker",
+        processRunId: seedAssignment.assignment?.processRunId,
+        processKey: seedAssignment.assignment?.processKey,
+        areaKey: seedAssignment.assignment?.areaKeys[0] ?? null,
+        status: "passed",
+        summary: {
+          processKey: seedAssignment.assignment?.processKey,
+          exitCode: 0,
+        },
+        executionScope: {
+          workerId: "checkpoint-seed-worker",
+        },
+      },
+    });
+
+    await app.inject({
+      method: "POST",
+      url: `/workers/steps/${seedStepRunId}/checkpoints`,
+      payload: {
+        workerId: "checkpoint-seed-worker",
+        processRunId: seedAssignment.assignment?.processRunId,
+        completedProcessKeys: [seedAssignment.assignment?.processKey],
+        pendingProcessKeys: [],
+        storagePath: "checkpoint.json",
+        resumableUntil: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+
+    await app.inject({
+      method: "POST",
+      url: `/workers/steps/${seedStepRunId}/events`,
+      payload: {
+        workerId: "checkpoint-seed-worker",
+        processRunId: seedAssignment.assignment?.processRunId,
+        kind: "passed",
+        message: "Completed checkpoint seed process",
+      },
+    });
+
+    const resumeCreateResponse = await app.inject({
+      method: "POST",
+      url: "/runs/manual",
+      payload: {
+        repositorySlug: "verge",
+        commitSha: "checkpoint-seed-sha",
+        requestedStepKeys: ["test"],
+        resumeFromCheckpoint: true,
+      },
+    });
+
+    expect(resumeCreateResponse.statusCode).toBe(200);
+    const resumeCreatePayload = resumeCreateResponse.json() as {
+      runId: string;
+      stepRunIds: string[];
+    };
+    const resumedStepRunId = resumeCreatePayload.stepRunIds[0];
+    if (!resumedStepRunId) {
+      throw new Error("Resumed step run was not created");
+    }
+
+    const sourceProcesses = await listProcessRuns(connection.db, seedStepRunId);
+    expect(
+      sourceProcesses.some((process) => ["queued", "claimed", "running"].includes(process.status)),
+    ).toBe(false);
+
+    const resumedClaimResponse = await app.inject({
+      method: "POST",
+      url: "/workers/claim",
+      payload: {
+        workerId: "checkpoint-resume-worker",
+      },
+    });
+    expect(resumedClaimResponse.statusCode).toBe(200);
+    const resumedAssignment = resumedClaimResponse.json() as {
+      assignment: {
+        stepRunId: string;
+        processKey: string;
+      } | null;
+    };
+
+    expect(resumedAssignment.assignment?.stepRunId).toBe(resumedStepRunId);
+    expect(resumedAssignment.assignment?.processKey).not.toBe(
+      seedAssignment.assignment?.processKey,
+    );
+  }, 30_000);
 });

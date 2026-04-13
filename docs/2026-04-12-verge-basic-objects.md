@@ -23,16 +23,6 @@ This is deliberately analogous to CI systems people already know:
 - a `process` is the smallest meaningful thing Verge tracks inside a step
 - an `observation` is the result recorded from the work
 
-## Naming Note
-
-Some current implementation records still use older internal names such as `run_request`, `run`, and `process_spec`.
-
-For product and concept docs, the intended model should be:
-
-- `run` = the commit-level evaluation
-- `step` = a major check inside that run
-- `process` = the smallest tracked unit inside a step
-
 ## The Main Objects
 
 ### Repository
