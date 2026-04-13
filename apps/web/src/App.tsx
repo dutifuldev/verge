@@ -145,11 +145,10 @@ export const App = () => {
     <main className="shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">Evidence-Based CI/CD Control Plane</p>
-          <h1>Verge runs Verge.</h1>
+          <p className="eyebrow">Repository State</p>
+          <h1>Repository health and run status</h1>
           <p className="lede">
-            Manual requests, concrete processes, reusable evidence, and a live picture of repository
-            health.
+            Shows run requests, process results, reusable evidence, and current area status.
           </p>
         </div>
         <div className="heroCard">
