@@ -5,8 +5,8 @@ import type {
   ProcessSpecSummary,
   RepositoryHealth,
   RunDetail,
-  RunRequestDetail,
-  RunSummary,
+  StepRunDetail,
+  StepRunSummary,
 } from "@verge/contracts";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
@@ -18,8 +18,9 @@ type AppRoute =
       page: number;
       status: string;
       trigger: string;
-      processSpecKey: string;
+      stepKey: string;
     }
+  | { name: "step"; runId: string; stepId: string }
   | { name: "run"; runId: string };
 
 const parseRoute = (): AppRoute => {
@@ -33,15 +34,18 @@ const parseRoute = (): AppRoute => {
       page: Number.isFinite(pageValue) && pageValue > 0 ? pageValue : 1,
       status: search.get("status") ?? "",
       trigger: search.get("trigger") ?? "",
-      processSpecKey: search.get("processSpecKey") ?? "",
+      stepKey: search.get("stepKey") ?? "",
     };
   }
 
-  if (path.startsWith("/runs/")) {
-    const runId = path.replace("/runs/", "").trim();
-    if (runId) {
-      return { name: "run", runId };
-    }
+  const stepMatch = path.match(/^\/runs\/([^/]+)\/steps\/([^/]+)$/);
+  if (stepMatch) {
+    return { name: "step", runId: stepMatch[1]!, stepId: stepMatch[2]! };
+  }
+
+  const runMatch = path.match(/^\/runs\/([^/]+)$/);
+  if (runMatch) {
+    return { name: "run", runId: runMatch[1]! };
   }
 
   return { name: "overview" };
@@ -125,8 +129,8 @@ const shouldShowSecondaryKey = (displayName: string, key: string): boolean =>
 
 const shortSha = (value: string): string => value.slice(0, 7);
 
-const classifyExecutionMode = (
-  run: Pick<RunSummary, "reusedFromRunId" | "checkpointSourceRunId" | "status">,
+const classifyStepExecutionMode = (
+  run: Pick<StepRunSummary, "reusedFromRunId" | "checkpointSourceRunId" | "status">,
 ): string => {
   if (run.reusedFromRunId) {
     return "reused";
@@ -138,6 +142,27 @@ const classifyExecutionMode = (
 
   if (run.status === "reused") {
     return "reused";
+  }
+
+  return "fresh";
+};
+
+const summarizeRunSteps = (steps: Array<Pick<StepRunSummary, "processSpecDisplayName">>): string =>
+  steps.map((step) => step.processSpecDisplayName).join(", ");
+
+const summarizeRunExecutionMode = (
+  steps: Array<Pick<StepRunSummary, "reusedFromRunId" | "checkpointSourceRunId" | "status">>,
+): string => {
+  if (steps.length === 0) {
+    return "pending";
+  }
+
+  if (steps.every((step) => step.reusedFromRunId || step.status === "reused")) {
+    return "reused";
+  }
+
+  if (steps.some((step) => step.checkpointSourceRunId)) {
+    return "resumed";
   }
 
   return "fresh";
@@ -222,8 +247,8 @@ const OverviewPage = ({
         <div>
           <h1>Repository health and recent evaluation state</h1>
           <p className="pageIntro">
-            Track the current repository state, active work, and recent process-spec runs without
-            collapsing everything into one mixed dashboard.
+            Track the current repository state, active work, and recent runs without collapsing
+            everything into one mixed dashboard.
           </p>
         </div>
         <div className="summaryGrid">
@@ -250,7 +275,7 @@ const OverviewPage = ({
       <section className="twoColumnLayout">
         <article className="panel">
           <header className="panelHeader">
-            <h2>Create a run request</h2>
+            <h2>Create a run</h2>
           </header>
           <div className="formGrid">
             <label className="field">
@@ -375,14 +400,14 @@ const OverviewPage = ({
                   onClick={() => navigate(`/runs/${run.id}`)}
                 >
                   <div>
-                    <strong>{run.processSpecDisplayName}</strong>
+                    <strong>{shortSha(run.commitSha)}</strong>
                     <span className="secondaryText">
-                      {shortSha(run.id)} · {formatRelativeTime(run.createdAt)}
+                      {run.trigger} · {formatRelativeTime(run.createdAt)}
                     </span>
                   </div>
                   <div className="rowMeta">
                     <StatusPill status={run.status} />
-                    <span className="secondaryText">{classifyExecutionMode(run)}</span>
+                    <span className="secondaryText">{run.steps.length} steps</span>
                   </div>
                 </button>
               ))}
@@ -390,7 +415,7 @@ const OverviewPage = ({
           ) : (
             <EmptyState
               title="No runs yet"
-              body="Push a commit or create a manual run request to see results here."
+              body="Push a commit or create a manual run to see results here."
             />
           )}
         </article>
@@ -409,8 +434,8 @@ const RunsPage = ({
 }: {
   runsPage: PaginatedRunList | null;
   processSpecs: ProcessSpecSummary[];
-  draftFilters: { status: string; trigger: string; processSpecKey: string };
-  onDraftFilterChange: (key: "status" | "trigger" | "processSpecKey", value: string) => void;
+  draftFilters: { status: string; trigger: string; stepKey: string };
+  onDraftFilterChange: (key: "status" | "trigger" | "stepKey", value: string) => void;
   onApplyFilters: () => void;
   onPageChange: (page: number) => void;
 }) => {
@@ -422,8 +447,7 @@ const RunsPage = ({
         <div>
           <h1>Run history</h1>
           <p className="pageIntro">
-            One row per run. This is the main operational view for browsing process-spec
-            evaluations.
+            One row per top-level run. Open a run to inspect the steps and processes inside it.
           </p>
         </div>
       </section>
@@ -462,10 +486,10 @@ const RunsPage = ({
             </select>
           </label>
           <label className="field">
-            <span>Process spec</span>
+            <span>Step</span>
             <select
-              value={draftFilters.processSpecKey}
-              onChange={(event) => onDraftFilterChange("processSpecKey", event.target.value)}
+              value={draftFilters.stepKey}
+              onChange={(event) => onDraftFilterChange("stepKey", event.target.value)}
             >
               <option value="">All</option>
               {processSpecs.map((spec) => (
@@ -495,10 +519,10 @@ const RunsPage = ({
                 <thead>
                   <tr>
                     <th>Status</th>
-                    <th>Process spec</th>
                     <th>Commit</th>
                     <th>Trigger</th>
                     <th>Ref</th>
+                    <th>Steps</th>
                     <th>Execution</th>
                     <th>Created</th>
                     <th>Duration</th>
@@ -513,13 +537,6 @@ const RunsPage = ({
                     >
                       <td>
                         <StatusPill status={run.status} />
-                      </td>
-                      <td>
-                        <div className="cellStack">
-                          <strong>{run.processSpecDisplayName}</strong>
-                          <span className="secondaryText">{run.processSpecKey}</span>
-                          <span className="secondaryText clampLine">{run.planReason}</span>
-                        </div>
                       </td>
                       <td>
                         <div className="cellStack">
@@ -538,7 +555,15 @@ const RunsPage = ({
                           </span>
                         </div>
                       </td>
-                      <td>{classifyExecutionMode(run)}</td>
+                      <td>
+                        <div className="cellStack">
+                          <strong>{run.steps.length} steps</strong>
+                          <span className="secondaryText clampLine">
+                            {summarizeRunSteps(run.steps)}
+                          </span>
+                        </div>
+                      </td>
+                      <td>{summarizeRunExecutionMode(run.steps)}</td>
                       <td>
                         <div className="cellStack">
                           <span>{formatDateTime(run.createdAt)}</span>
@@ -581,28 +606,25 @@ const RunsPage = ({
   );
 };
 
-const RunDetailPage = ({
-  run,
-  request,
-}: {
-  run: RunDetail | null;
-  request: RunRequestDetail | null;
-}) => {
+const RunDetailPage = ({ run }: { run: RunDetail | null }) => {
   if (!run) {
-    return <EmptyState title="Loading run" body="Fetching run detail, processes, and evidence." />;
+    return <EmptyState title="Loading run" body="Fetching run detail and step summaries." />;
   }
 
   return (
     <div className="pageStack">
       <section className="pageHeader">
         <div>
-          <h1>{run.processSpecDisplayName}</h1>
-          <p className="pageIntro">{run.planReason}</p>
+          <h1>Run {shortSha(run.commitSha)}</h1>
+          <p className="pageIntro">
+            {run.trigger} trigger with {run.steps.length} steps and {run.changedFiles.length}{" "}
+            changed files.
+          </p>
         </div>
         <div className="badgeRow">
           <StatusPill status={run.status} />
-          <span className="subtleBadge">{classifyExecutionMode(run)}</span>
-          <span className="subtleBadge">{run.processSpecKey}</span>
+          <span className="subtleBadge">{summarizeRunExecutionMode(run.steps)}</span>
+          <span className="subtleBadge">{run.steps.length} steps</span>
         </div>
       </section>
 
@@ -614,14 +636,14 @@ const RunDetailPage = ({
         </div>
         <div className="summaryCard">
           <span className="summaryLabel">Commit</span>
-          <strong className="monoText">{request ? shortSha(request.commitSha) : "Loading"}</strong>
-          <span className="summaryMeta">{request?.branch ?? "No branch"}</span>
+          <strong className="monoText">{shortSha(run.commitSha)}</strong>
+          <span className="summaryMeta">{run.branch ?? "No branch"}</span>
         </div>
         <div className="summaryCard">
           <span className="summaryLabel">Trigger</span>
-          <strong>{request?.trigger ?? "Loading"}</strong>
+          <strong>{run.trigger}</strong>
           <span className="summaryMeta">
-            {request?.pullRequestNumber ? `PR #${request.pullRequestNumber}` : "No PR"}
+            {run.pullRequestNumber ? `PR #${run.pullRequestNumber}` : "No PR"}
           </span>
         </div>
         <div className="summaryCard">
@@ -632,6 +654,150 @@ const RunDetailPage = ({
               ? `${formatDateTime(run.startedAt)} to ${formatDateTime(run.finishedAt)}`
               : "Pending"}
           </span>
+        </div>
+      </section>
+
+      <section className="panel tablePanel">
+        <header className="panelHeader">
+          <h2>Steps</h2>
+        </header>
+        <div className="tableScroller">
+          <table className="dataTable">
+            <thead>
+              <tr>
+                <th>Step</th>
+                <th>Status</th>
+                <th>Execution</th>
+                <th>Processes</th>
+                <th>Started</th>
+                <th>Finished</th>
+                <th>Duration</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {run.steps.map((step) => (
+                <tr key={step.id}>
+                  <td>
+                    <div className="cellStack">
+                      <strong>{step.processSpecDisplayName}</strong>
+                      <span className="secondaryText">{step.processSpecKey}</span>
+                      <span className="secondaryText clampLine">{step.planReason}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <StatusPill status={step.status} />
+                  </td>
+                  <td>{classifyStepExecutionMode(step)}</td>
+                  <td>{step.processCount}</td>
+                  <td>{formatDateTime(step.startedAt)}</td>
+                  <td>{formatDateTime(step.finishedAt)}</td>
+                  <td>{formatDuration(step.startedAt, step.finishedAt)}</td>
+                  <td>
+                    <a
+                      className="tableLink"
+                      href={`/runs/${run.id}/steps/${step.id}`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(`/runs/${run.id}/steps/${step.id}`);
+                      }}
+                    >
+                      Open step
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <header className="panelHeader">
+          <h2>Trigger context</h2>
+        </header>
+        <div className="infoGrid">
+          <div>
+            <span className="infoLabel">Run id</span>
+            <div className="monoText breakText">{run.id}</div>
+          </div>
+          <div>
+            <span className="infoLabel">Repository</span>
+            <div>{run.repositorySlug}</div>
+          </div>
+          <div>
+            <span className="infoLabel">Created</span>
+            <div>{formatDateTime(run.createdAt)}</div>
+          </div>
+          <div>
+            <span className="infoLabel">Status</span>
+            <div>{run.status}</div>
+          </div>
+          <div className="span2">
+            <span className="infoLabel">Changed files</span>
+            <div className="codeList">
+              {run.changedFiles.length ? run.changedFiles.join("\n") : "No changed files"}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+const StepDetailPage = ({ run, step }: { run: RunDetail | null; step: StepRunDetail | null }) => {
+  if (!run || !step) {
+    return <EmptyState title="Loading step" body="Fetching step detail and process data." />;
+  }
+
+  return (
+    <div className="pageStack">
+      <section className="pageHeader">
+        <div>
+          <h1>{step.processSpecDisplayName}</h1>
+          <p className="pageIntro">
+            Part of run {shortSha(run.commitSha)}. This page contains the processes, events,
+            observations, artifacts, and checkpoints for one step.
+          </p>
+        </div>
+        <div className="badgeRow">
+          <StatusPill status={step.status} />
+          <span className="subtleBadge">{classifyStepExecutionMode(step)}</span>
+          <span className="subtleBadge">{step.processSpecKey}</span>
+        </div>
+      </section>
+
+      <section className="panel">
+        <header className="panelHeader">
+          <h2>Context</h2>
+          <a
+            className="panelLink"
+            href={`/runs/${run.id}`}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(`/runs/${run.id}`);
+            }}
+          >
+            Back to run
+          </a>
+        </header>
+        <div className="infoGrid">
+          <div>
+            <span className="infoLabel">Run</span>
+            <div className="monoText breakText">{run.id}</div>
+          </div>
+          <div>
+            <span className="infoLabel">Commit</span>
+            <div className="monoText">{shortSha(run.commitSha)}</div>
+          </div>
+          <div>
+            <span className="infoLabel">Trigger</span>
+            <div>{run.trigger}</div>
+          </div>
+          <div>
+            <span className="infoLabel">Processes</span>
+            <div>{step.processes.length}</div>
+          </div>
         </div>
       </section>
 
@@ -653,7 +819,7 @@ const RunDetailPage = ({
               </tr>
             </thead>
             <tbody>
-              {run.processes.map((process) => (
+              {step.processes.map((process) => (
                 <tr key={process.id}>
                   <td>
                     <div className="cellStack">
@@ -681,9 +847,9 @@ const RunDetailPage = ({
           <header className="panelHeader">
             <h2>Events</h2>
           </header>
-          {run.events.length ? (
+          {step.events.length ? (
             <div className="stackList">
-              {run.events.map((event) => (
+              {step.events.map((event) => (
                 <div className="timelineItem" key={event.id}>
                   <div className="timelineMeta">
                     <StatusPill status={event.kind} />
@@ -697,7 +863,7 @@ const RunDetailPage = ({
               ))}
             </div>
           ) : (
-            <EmptyState title="No events" body="This run has not emitted any lifecycle events." />
+            <EmptyState title="No events" body="This step has not emitted any lifecycle events." />
           )}
         </article>
 
@@ -705,13 +871,13 @@ const RunDetailPage = ({
           <header className="panelHeader">
             <h2>Observations</h2>
           </header>
-          {run.observations.length ? (
+          {step.observations.length ? (
             <div className="stackList">
-              {run.observations.map((observation) => (
+              {step.observations.map((observation) => (
                 <div className="entityCard" key={observation.id}>
                   <div className="entityHeader">
                     <div>
-                      <strong>{observation.processKey ?? "run"}</strong>
+                      <strong>{observation.processKey ?? "step"}</strong>
                       <span className="secondaryText">
                         {observation.areaKey ?? "no area"} ·{" "}
                         {formatDateTime(observation.observedAt)}
@@ -726,7 +892,7 @@ const RunDetailPage = ({
           ) : (
             <EmptyState
               title="No observations"
-              body="This run has not recorded any observations yet."
+              body="This step has not recorded any observations yet."
             />
           )}
         </article>
@@ -737,9 +903,9 @@ const RunDetailPage = ({
           <header className="panelHeader">
             <h2>Artifacts</h2>
           </header>
-          {run.artifacts.length ? (
+          {step.artifacts.length ? (
             <div className="stackList">
-              {run.artifacts.map((artifact) => (
+              {step.artifacts.map((artifact) => (
                 <div className="entityCard" key={artifact.id}>
                   <div className="entityHeader">
                     <div>
@@ -756,7 +922,7 @@ const RunDetailPage = ({
                     <div>
                       <span className="infoLabel">Process id</span>
                       <div className="monoText breakText">
-                        {artifact.runProcessId ?? "run-level"}
+                        {artifact.runProcessId ?? "step-level"}
                       </div>
                     </div>
                   </div>
@@ -764,7 +930,7 @@ const RunDetailPage = ({
               ))}
             </div>
           ) : (
-            <EmptyState title="No artifacts" body="This run has not stored any artifacts." />
+            <EmptyState title="No artifacts" body="This step has not stored any artifacts." />
           )}
         </article>
 
@@ -772,9 +938,9 @@ const RunDetailPage = ({
           <header className="panelHeader">
             <h2>Checkpoints</h2>
           </header>
-          {run.checkpoints.length ? (
+          {step.checkpoints.length ? (
             <div className="stackList">
-              {run.checkpoints.map((checkpoint) => (
+              {step.checkpoints.map((checkpoint) => (
                 <div className="entityCard" key={checkpoint.id}>
                   <div className="entityHeader">
                     <div>
@@ -802,42 +968,10 @@ const RunDetailPage = ({
               ))}
             </div>
           ) : (
-            <EmptyState title="No checkpoints" body="This run has no saved checkpoint state." />
+            <EmptyState title="No checkpoints" body="This step has no saved checkpoint state." />
           )}
         </article>
       </section>
-
-      {request ? (
-        <section className="panel">
-          <header className="panelHeader">
-            <h2>Trigger context</h2>
-          </header>
-          <div className="infoGrid">
-            <div>
-              <span className="infoLabel">Request id</span>
-              <div className="monoText breakText">{request.id}</div>
-            </div>
-            <div>
-              <span className="infoLabel">Repository</span>
-              <div>{request.repositorySlug}</div>
-            </div>
-            <div>
-              <span className="infoLabel">Created</span>
-              <div>{formatDateTime(request.createdAt)}</div>
-            </div>
-            <div>
-              <span className="infoLabel">Status</span>
-              <div>{request.status}</div>
-            </div>
-            <div className="span2">
-              <span className="infoLabel">Changed files</span>
-              <div className="codeList">
-                {request.changedFiles.length ? request.changedFiles.join("\n") : "No changed files"}
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
     </div>
   );
 };
@@ -848,7 +982,7 @@ export const App = () => {
   const [processSpecs, setProcessSpecs] = useState<ProcessSpecSummary[]>([]);
   const [runsPage, setRunsPage] = useState<PaginatedRunList | null>(null);
   const [selectedRun, setSelectedRun] = useState<RunDetail | null>(null);
-  const [selectedRequest, setSelectedRequest] = useState<RunRequestDetail | null>(null);
+  const [selectedStep, setSelectedStep] = useState<StepRunDetail | null>(null);
   const [commitSha, setCommitSha] = useState("");
   const [branch, setBranch] = useState("main");
   const [changedFiles, setChangedFiles] = useState("");
@@ -860,9 +994,9 @@ export const App = () => {
       ? {
           status: route.status,
           trigger: route.trigger,
-          processSpecKey: route.processSpecKey,
+          stepKey: route.stepKey,
         }
-      : { status: "", trigger: "", processSpecKey: "" },
+      : { status: "", trigger: "", stepKey: "" },
   );
 
   useEffect(() => {
@@ -879,7 +1013,7 @@ export const App = () => {
     setDraftFilters({
       status: route.status,
       trigger: route.trigger,
-      processSpecKey: route.processSpecKey,
+      stepKey: route.stepKey,
     });
   }, [route]);
 
@@ -925,8 +1059,8 @@ export const App = () => {
         if (route.trigger) {
           search.set("trigger", route.trigger);
         }
-        if (route.processSpecKey) {
-          search.set("processSpecKey", route.processSpecKey);
+        if (route.stepKey) {
+          search.set("stepKey", route.stepKey);
         }
 
         const nextRunsPage = await fetchJson<PaginatedRunList>(
@@ -946,23 +1080,25 @@ export const App = () => {
   }, [route]);
 
   useEffect(() => {
-    if (route.name !== "run") {
+    if (route.name !== "run" && route.name !== "step") {
       setSelectedRun(null);
-      setSelectedRequest(null);
+      setSelectedStep(null);
       return;
     }
 
     setSelectedRun(null);
-    setSelectedRequest(null);
+    setSelectedStep(null);
 
     const refresh = async (): Promise<void> => {
       try {
-        const run = await fetchJson<RunDetail>(`/runs/${route.runId}`);
+        const run = await fetchJson<RunDetail>(`/run-requests/${route.runId}`);
         setSelectedRun(run);
-        const request = await fetchJson<RunRequestDetail>(`/run-requests/${run.runRequestId}`);
-        setSelectedRequest(request);
+        if (route.name === "step") {
+          const step = await fetchJson<StepRunDetail>(`/runs/${route.stepId}`);
+          setSelectedStep(step);
+        }
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : "Failed to load run detail");
+        setError(nextError instanceof Error ? nextError.message : "Failed to load run data");
       }
     };
 
@@ -980,22 +1116,25 @@ export const App = () => {
     setError(null);
 
     try {
-      const response = await fetchJson<{ runIds: string[] }>("/run-requests/manual", {
-        method: "POST",
-        body: JSON.stringify({
-          repositorySlug: "verge",
-          commitSha: commitSha.trim(),
-          branch: branch.trim() || undefined,
-          changedFiles: changedFiles
-            .split("\n")
-            .map((value) => value.trim())
-            .filter(Boolean),
-          resumeFromCheckpoint,
-        }),
-      });
+      const response = await fetchJson<{ runRequestId: string; runIds: string[] }>(
+        "/run-requests/manual",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            repositorySlug: "verge",
+            commitSha: commitSha.trim(),
+            branch: branch.trim() || undefined,
+            changedFiles: changedFiles
+              .split("\n")
+              .map((value) => value.trim())
+              .filter(Boolean),
+            resumeFromCheckpoint,
+          }),
+        },
+      );
 
-      if (response.runIds.length > 0) {
-        navigate(`/runs/${response.runIds[0]}`);
+      if (response.runRequestId) {
+        navigate(`/runs/${response.runRequestId}`);
       }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to start run");
@@ -1012,8 +1151,8 @@ export const App = () => {
     if (draftFilters.trigger) {
       search.set("trigger", draftFilters.trigger);
     }
-    if (draftFilters.processSpecKey) {
-      search.set("processSpecKey", draftFilters.processSpecKey);
+    if (draftFilters.stepKey) {
+      search.set("stepKey", draftFilters.stepKey);
     }
     search.set("page", "1");
     navigate(`/runs?${search.toString()}`);
@@ -1031,8 +1170,8 @@ export const App = () => {
     if (route.trigger) {
       search.set("trigger", route.trigger);
     }
-    if (route.processSpecKey) {
-      search.set("processSpecKey", route.processSpecKey);
+    if (route.stepKey) {
+      search.set("stepKey", route.stepKey);
     }
     search.set("page", String(page));
     navigate(`/runs?${search.toString()}`);
@@ -1089,7 +1228,8 @@ export const App = () => {
         />
       ) : null}
 
-      {route.name === "run" ? <RunDetailPage run={selectedRun} request={selectedRequest} /> : null}
+      {route.name === "run" ? <RunDetailPage run={selectedRun} /> : null}
+      {route.name === "step" ? <StepDetailPage run={selectedRun} step={selectedStep} /> : null}
     </main>
   );
 };

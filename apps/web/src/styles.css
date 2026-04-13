@@ -495,6 +495,17 @@ table {
   cursor: pointer;
 }
 
+.tableLink {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tableLink:hover,
+.tableLink:focus-visible {
+  text-decoration: underline;
+}
+
 .cellStack {
   display: grid;
   gap: 4px;

@@ -17,9 +17,9 @@ The repository currently includes:
 - Postgres-backed persistence via Kysely
 - local filesystem-backed artifact and checkpoint storage
 - GitHub webhook ingestion
-- manual run requests
+- manual run creation
 - process reuse
-- checkpoint-based resume for cooperative process specs
+- checkpoint-based resume for cooperative steps
 - GitHub Actions CI that validates the repo and runs a self-hosted smoke test
 
 ## Core Model
@@ -27,15 +27,17 @@ The repository currently includes:
 The main runtime shape is:
 
 ```text
-process spec -> run -> process -> observation
+run -> step -> process -> observation
 ```
 
 In plain terms:
 
-- a `process spec` is a reusable recipe like `test` or `build`
-- a `run` is one evaluation of one process spec for one trigger
-- a `process` is one concrete computation with a stable identity
+- a `run` is one commit-level, PR-level, or manual evaluation
+- a `step` is a major check inside a run, like `test` or `build`
+- a `process` is one concrete computation inside a step, with a stable identity
 - an `observation` is the recorded result
+
+Some current API and storage names still use older internal terms such as `run_request`, `run`, and `process_spec`. The public model above is the intended mental model.
 
 ## Workspace Layout
 
@@ -120,7 +122,7 @@ pnpm test:smoke
 
 Verge is intended to validate itself.
 
-The self-hosted process specs currently cover:
+The self-hosted steps currently cover:
 
 - `format-check`
 - `lint`
@@ -129,7 +131,7 @@ The self-hosted process specs currently cover:
 - `build`
 - `docs:validate`
 
-The smoke test boots the API and worker, creates a manual run request against this repo, executes the process specs, and verifies checkpoint-based resume on the `test` process spec.
+The smoke test boots the API and worker, creates a manual run against this repo, executes the self-hosted steps, and verifies checkpoint-based resume on the `test` step.
 
 ## CI
 

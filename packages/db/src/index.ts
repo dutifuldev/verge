@@ -16,11 +16,12 @@ import type {
   RecordObservationInput,
   RepositoryDefinition,
   RepositoryHealth,
-  RunDetail,
   RunListQuery,
   RunListItem,
   RunRequestDetail,
   RunSummary,
+  StepRunDetail,
+  StepRunSummary,
   RunTrigger,
 } from "@verge/contracts";
 import { determineFreshnessBucket, materializeProcesses } from "@verge/core";
@@ -1184,10 +1185,86 @@ const selectRunRows = (db: Kysely<VergeDatabase>, repositorySlug?: string) => {
   return query;
 };
 
-const toRunSummary = async (
+const selectRunRequestRows = (db: Kysely<VergeDatabase>, repositorySlug?: string) => {
+  let query = db
+    .selectFrom("run_requests")
+    .innerJoin("repositories", "repositories.id", "run_requests.repository_id")
+    .select([
+      "run_requests.id as runRequestId",
+      "repositories.slug as repositorySlug",
+      "run_requests.trigger as trigger",
+      "run_requests.commit_sha as commitSha",
+      "run_requests.branch as branch",
+      "run_requests.pull_request_number as pullRequestNumber",
+      "run_requests.changed_files as changedFiles",
+      "run_requests.created_at as createdAt",
+    ]);
+
+  if (repositorySlug) {
+    query = query.where("repositories.slug", "=", repositorySlug);
+  }
+
+  return query;
+};
+
+const summarizeRunStatus = (steps: Array<Pick<StepRunSummary, "status">>): RunSummary["status"] => {
+  if (steps.length === 0) {
+    return "queued";
+  }
+
+  const statuses = steps.map((step) => step.status);
+
+  if (statuses.some((status) => status === "failed")) {
+    return "failed";
+  }
+
+  if (statuses.some((status) => status === "interrupted")) {
+    return "interrupted";
+  }
+
+  if (statuses.some((status) => status === "running")) {
+    return "running";
+  }
+
+  if (statuses.some((status) => status === "queued")) {
+    return "queued";
+  }
+
+  if (statuses.every((status) => status === "reused")) {
+    return "reused";
+  }
+
+  return "passed";
+};
+
+const summarizeRunTiming = (
+  steps: Array<Pick<StepRunSummary, "startedAt" | "finishedAt">>,
+): Pick<RunSummary, "startedAt" | "finishedAt"> => {
+  const startedCandidates = steps
+    .map((step) => step.startedAt)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime());
+
+  const finishedCandidates = steps
+    .map((step) => step.finishedAt)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime());
+
+  return {
+    startedAt: startedCandidates.length
+      ? new Date(Math.min(...startedCandidates)).toISOString()
+      : null,
+    finishedAt:
+      finishedCandidates.length === steps.length && finishedCandidates.length > 0
+        ? new Date(Math.max(...finishedCandidates)).toISOString()
+        : null,
+  };
+};
+
+const toStepRunSummary = async (
   db: Kysely<VergeDatabase>,
   row: Awaited<ReturnType<ReturnType<typeof selectRunRows>["executeTakeFirst"]>>,
-): Promise<RunSummary> => {
+): Promise<StepRunSummary> => {
   if (!row) {
     throw new Error("Missing run row");
   }
@@ -1206,163 +1283,65 @@ const toRunSummary = async (
     createdAt: row.runCreatedAt.toISOString(),
     startedAt: iso(row.runStartedAt),
     finishedAt: iso(row.runFinishedAt),
-    processes: processes.map((process) => ({
-      id: process.id,
-      processKey: process.process_key,
-      processLabel: process.process_label,
-      processType: process.process_type,
-      status: process.status as RunSummary["processes"][number]["status"],
-      attemptCount: process.attempt_count,
-      startedAt: iso(process.started_at),
-      finishedAt: iso(process.finished_at),
-    })),
+    processCount: processes.length,
   };
 };
 
-const toRunListItem = async (
+const toStepRunDetail = async (
   db: Kysely<VergeDatabase>,
   row: Awaited<ReturnType<ReturnType<typeof selectRunRows>["executeTakeFirst"]>>,
-): Promise<RunListItem> => {
+): Promise<StepRunDetail> => {
   if (!row) {
     throw new Error("Missing run row");
   }
 
-  const summary = await toRunSummary(db, row);
-
-  return {
-    ...summary,
-    repositorySlug: row.repositorySlug,
-    trigger: row.trigger as RunTrigger,
-    commitSha: row.commitSha,
-    branch: row.branch,
-    pullRequestNumber: row.pullRequestNumber,
-    changedFiles: parseJson<string[]>(row.changedFiles),
-  };
-};
-
-export const listRepositoryRuns = async (
-  db: Kysely<VergeDatabase>,
-  repositorySlug: string,
-  query: RunListQuery,
-): Promise<PaginatedRunList> => {
-  const page = Math.max(1, query.page);
-  const pageSize = Math.max(1, Math.min(100, query.pageSize));
-  const offset = (page - 1) * pageSize;
-
-  let baseQuery = selectRunRows(db, repositorySlug);
-
-  if (query.status) {
-    baseQuery = baseQuery.where("runs.status", "=", query.status);
-  }
-
-  if (query.trigger) {
-    baseQuery = baseQuery.where("run_requests.trigger", "=", query.trigger);
-  }
-
-  if (query.processSpecKey) {
-    baseQuery = baseQuery.where("process_specs.key", "=", query.processSpecKey);
-  }
-
-  const totalRow = await baseQuery
-    .clearSelect()
-    .select(({ fn }) => fn.count<string>("runs.id").as("count"))
-    .executeTakeFirstOrThrow();
-
-  const rows = await baseQuery
-    .orderBy("runs.created_at", "desc")
-    .limit(pageSize)
-    .offset(offset)
-    .execute();
-
-  return {
-    page,
-    pageSize,
-    total: Number(totalRow.count),
-    items: await Promise.all(rows.map((row) => toRunListItem(db, row))),
-  };
-};
-
-export const getRunRequestDetail = async (
-  db: Kysely<VergeDatabase>,
-  runRequestId: string,
-): Promise<RunRequestDetail> => {
-  const request = await db
-    .selectFrom("run_requests")
-    .innerJoin("repositories", "repositories.id", "run_requests.repository_id")
-    .select([
-      "run_requests.id as id",
-      "repositories.slug as repositorySlug",
-      "run_requests.trigger as trigger",
-      "run_requests.commit_sha as commitSha",
-      "run_requests.branch as branch",
-      "run_requests.pull_request_number as pullRequestNumber",
-      "run_requests.changed_files as changedFiles",
-      "run_requests.status as status",
-      "run_requests.created_at as createdAt",
-    ])
-    .where("run_requests.id", "=", runRequestId)
-    .executeTakeFirstOrThrow();
-
-  const runs = await selectRunRows(db)
-    .where("runs.run_request_id", "=", runRequestId)
-    .orderBy("runs.created_at", "asc")
-    .execute();
-
-  return {
-    id: request.id,
-    repositorySlug: request.repositorySlug,
-    trigger: request.trigger as RunRequestDetail["trigger"],
-    commitSha: request.commitSha,
-    branch: request.branch,
-    pullRequestNumber: request.pullRequestNumber,
-    changedFiles: parseJson<string[]>(request.changedFiles),
-    status: request.status,
-    createdAt: request.createdAt.toISOString(),
-    runs: await Promise.all(runs.map((run) => toRunSummary(db, run))),
-  };
-};
-
-export const getRunDetail = async (
-  db: Kysely<VergeDatabase>,
-  runId: string,
-): Promise<RunDetail> => {
-  const runRow = await selectRunRows(db).where("runs.id", "=", runId).executeTakeFirstOrThrow();
-
-  const summary = await toRunSummary(db, runRow);
+  const summary = await toStepRunSummary(db, row);
   const observations = await db
     .selectFrom("observations")
     .selectAll()
-    .where("run_id", "=", runId)
+    .where("run_id", "=", row.runId)
     .orderBy("observed_at", "asc")
     .execute();
   const events = await db
     .selectFrom("run_events")
     .selectAll()
-    .where("run_id", "=", runId)
+    .where("run_id", "=", row.runId)
     .orderBy("created_at", "asc")
     .execute();
   const artifacts = await db
     .selectFrom("run_artifacts")
     .selectAll()
-    .where("run_id", "=", runId)
+    .where("run_id", "=", row.runId)
     .orderBy("created_at", "asc")
     .execute();
   const checkpoints = await db
     .selectFrom("run_checkpoints")
     .selectAll()
-    .where("run_id", "=", runId)
+    .where("run_id", "=", row.runId)
     .orderBy("created_at", "asc")
     .execute();
 
   return {
     ...summary,
+    processes: await listRunProcesses(db, row.runId).then((processes) =>
+      processes.map((process) => ({
+        id: process.id,
+        processKey: process.process_key,
+        processLabel: process.process_label,
+        processType: process.process_type,
+        status: process.status as StepRunDetail["processes"][number]["status"],
+        attemptCount: process.attempt_count,
+        startedAt: iso(process.started_at),
+        finishedAt: iso(process.finished_at),
+      })),
+    ),
     observations: observations.map((observation) => ({
       id: observation.id,
       runId: observation.run_id,
       runProcessId: observation.run_process_id,
       processKey: observation.process_key,
       areaKey: observation.area_key,
-      status: observation.status as RunDetail["observations"][number]["status"],
+      status: observation.status as StepRunDetail["observations"][number]["status"],
       summary: parseJson<Record<string, unknown>>(observation.summary),
       executionScope: parseJson<Record<string, unknown>>(observation.execution_scope),
       observedAt: observation.observed_at.toISOString(),
@@ -1398,6 +1377,119 @@ export const getRunDetail = async (
   };
 };
 
+export const listRepositoryRuns = async (
+  db: Kysely<VergeDatabase>,
+  repositorySlug: string,
+  query: RunListQuery,
+): Promise<PaginatedRunList> => {
+  const page = Math.max(1, query.page);
+  const pageSize = Math.max(1, Math.min(100, query.pageSize));
+  const offset = (page - 1) * pageSize;
+  const rows = await selectRunRequestRows(db, repositorySlug)
+    .orderBy("run_requests.created_at", "desc")
+    .execute();
+
+  const summaries = await Promise.all(
+    rows.map(async (row): Promise<RunListItem> => {
+      const stepRows = await selectRunRows(db)
+        .where("runs.run_request_id", "=", row.runRequestId)
+        .orderBy("runs.created_at", "asc")
+        .execute();
+      const steps = await Promise.all(stepRows.map((stepRow) => toStepRunSummary(db, stepRow)));
+      const timing = summarizeRunTiming(steps);
+
+      return {
+        id: row.runRequestId,
+        repositorySlug: row.repositorySlug,
+        trigger: row.trigger as RunTrigger,
+        commitSha: row.commitSha,
+        branch: row.branch,
+        pullRequestNumber: row.pullRequestNumber,
+        changedFiles: parseJson<string[]>(row.changedFiles),
+        status: summarizeRunStatus(steps),
+        createdAt: row.createdAt.toISOString(),
+        startedAt: timing.startedAt,
+        finishedAt: timing.finishedAt,
+        steps,
+      };
+    }),
+  );
+
+  const filtered = summaries.filter((summary) => {
+    if (query.status && summary.status !== query.status) {
+      return false;
+    }
+
+    if (query.trigger && summary.trigger !== query.trigger) {
+      return false;
+    }
+
+    if (query.stepKey && !summary.steps.some((step) => step.processSpecKey === query.stepKey)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return {
+    page,
+    pageSize,
+    total: filtered.length,
+    items: filtered.slice(offset, offset + pageSize),
+  };
+};
+
+export const getRunRequestDetail = async (
+  db: Kysely<VergeDatabase>,
+  runRequestId: string,
+): Promise<RunRequestDetail> => {
+  const request = await db
+    .selectFrom("run_requests")
+    .innerJoin("repositories", "repositories.id", "run_requests.repository_id")
+    .select([
+      "run_requests.id as id",
+      "repositories.slug as repositorySlug",
+      "run_requests.trigger as trigger",
+      "run_requests.commit_sha as commitSha",
+      "run_requests.branch as branch",
+      "run_requests.pull_request_number as pullRequestNumber",
+      "run_requests.changed_files as changedFiles",
+      "run_requests.created_at as createdAt",
+    ])
+    .where("run_requests.id", "=", runRequestId)
+    .executeTakeFirstOrThrow();
+
+  const stepRows = await selectRunRows(db)
+    .where("runs.run_request_id", "=", runRequestId)
+    .orderBy("runs.created_at", "asc")
+    .execute();
+  const steps = await Promise.all(stepRows.map((run) => toStepRunSummary(db, run)));
+  const timing = summarizeRunTiming(steps);
+
+  return {
+    id: request.id,
+    repositorySlug: request.repositorySlug,
+    trigger: request.trigger as RunRequestDetail["trigger"],
+    commitSha: request.commitSha,
+    branch: request.branch,
+    pullRequestNumber: request.pullRequestNumber,
+    changedFiles: parseJson<string[]>(request.changedFiles),
+    status: summarizeRunStatus(steps),
+    createdAt: request.createdAt.toISOString(),
+    startedAt: timing.startedAt,
+    finishedAt: timing.finishedAt,
+    steps,
+  };
+};
+
+export const getRunDetail = async (
+  db: Kysely<VergeDatabase>,
+  runId: string,
+): Promise<StepRunDetail> => {
+  const runRow = await selectRunRows(db).where("runs.id", "=", runId).executeTakeFirstOrThrow();
+  return toStepRunDetail(db, runRow);
+};
+
 export const getRepositoryHealth = async (
   db: Kysely<VergeDatabase>,
   repositorySlug: string,
@@ -1407,13 +1499,11 @@ export const getRepositoryHealth = async (
     .selectAll()
     .where("slug", "=", repositorySlug)
     .executeTakeFirstOrThrow();
-
-  const runs = await selectRunRows(db, repositorySlug)
-    .orderBy("runs.created_at", "desc")
-    .limit(12)
-    .execute();
-
-  const summaries = await Promise.all(runs.map((run) => toRunSummary(db, run)));
+  const allRuns = await listRepositoryRuns(db, repositorySlug, {
+    page: 1,
+    pageSize: 12,
+  });
+  const summaries = allRuns.items;
   const areaStates = await db
     .selectFrom("area_freshness_state")
     .innerJoin("repo_areas", "repo_areas.id", "area_freshness_state.repo_area_id")

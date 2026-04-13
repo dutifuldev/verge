@@ -8,11 +8,12 @@ tags: [verge, ui, ux, runs, processes]
 
 The current single-page UI is the wrong shape for the product.
 
-Verge has at least three different levels of information:
+Verge has at least four different levels of information:
 
 - repository state
 - runs
-- processes inside a run
+- steps inside a run
+- processes inside a step
 
 Those should not be flattened into one mixed dashboard.
 
@@ -20,9 +21,9 @@ Those should not be flattened into one mixed dashboard.
 
 The UI should reflect the backend model directly:
 
-- a `process spec` is a kind of evaluation like `test`, `build`, or `lint`
-- a `run` is one evaluation of one process spec for one trigger and one commit
-- a `process` is one concrete computation inside that run, like `api`, `web`, `worker`, or `packages`
+- a `run` is one commit-level, PR-level, or manual evaluation
+- a `step` is a major check inside a run, like `test`, `build`, or `lint`
+- a `process` is one concrete computation inside a step, like `api`, `web`, `worker`, or `packages`
 
 That means the main navigation should be built around runs, not around one large homepage panel.
 
@@ -65,7 +66,7 @@ It should be a paginated table with one row per run.
 
 A row should represent:
 
-- one process spec
+- one run
 - one trigger
 - one commit
 - one run result
@@ -73,12 +74,12 @@ A row should represent:
 Recommended columns:
 
 - status
-- process spec
+- run id
 - commit
 - branch or PR
 - trigger
-- plan reason
-- reuse or checkpoint source
+- step summary
+- reused or resumed steps
 - started at
 - finished at
 - duration
@@ -87,7 +88,7 @@ Recommended filters:
 
 - status
 - trigger
-- process spec
+- step
 - branch
 - commit
 - reused vs fresh vs resumed
@@ -107,9 +108,10 @@ This page should feel closer to a CI runs table than a marketing dashboard.
 This page should answer:
 
 - why was this run created
-- what exactly happened in it
+- which steps existed in it
+- what exactly happened in each step
 - which processes ran
-- which processes were reused
+- which steps or processes were reused
 - which observations were produced
 - what artifacts and checkpoints exist
 
@@ -118,6 +120,7 @@ This is where Verge becomes understandable.
 The run detail page should include:
 
 - top summary
+- step list
 - process list
 - events
 - observations
@@ -128,7 +131,6 @@ The run detail page should include:
 
 The top summary should show:
 
-- process spec
 - run id
 - repository
 - commit
@@ -136,15 +138,42 @@ The top summary should show:
 - trigger
 - status
 - plan reason
+- step summary
 - reused-from run id if any
 - checkpoint-source run id if any
 - created, started, finished, duration
 
+### Step List
+
+The page should first show the major checks inside the run.
+
+Recommended columns:
+
+- step key
+- label
+- status
+- process count
+- reused or resumed
+- started at
+- finished at
+- duration
+
+This makes the structure of the run obvious before the user drills into the lower-level processes.
+
+Example:
+
+- run: commit `abc123`
+- steps:
+  - `build`
+  - `lint`
+  - `typecheck`
+  - `test`
+
 ### Process List
 
-This is the most important section.
+This should sit under the selected step or below the step list.
 
-It should show every process inside the run in a table.
+It should show every process inside the step in a table.
 
 Recommended columns:
 
@@ -161,7 +190,7 @@ This makes the internal structure of the run obvious.
 
 Example:
 
-- run: `test`
+- step: `test`
 - processes:
   - `api`
   - `web`
@@ -259,6 +288,7 @@ Recommended routes:
 Optional later:
 
 - `/repositories/:slug`
+- `/runs/:runId/steps/:stepKey`
 - `/runs/:runId/processes/:processId`
 
 Normal routes are easier to reason about, easier to share, and easier to extend.
@@ -299,7 +329,8 @@ The next UI iteration should do only this:
 1. Keep a small repository overview on `/`
 2. Add a dedicated paginated `/runs` table
 3. Add a dedicated `/runs/:runId` detail page
-4. Move process, event, observation, artifact, and checkpoint detail into the run page
-5. Remove slogan-style copy from the main view
+4. Make the run page show steps first, then the processes inside those steps
+5. Move event, observation, artifact, and checkpoint detail into the run page
+6. Remove slogan-style copy from the main view
 
 That would bring the UI much closer to the actual shape of Verge.

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-import type { ClaimedRunProcess, RunDetail } from "@verge/contracts";
+import type { ClaimedRunProcess, StepRunDetail } from "@verge/contracts";
 import { FilesystemArtifactStorage } from "@verge/core";
 
 const apiBaseUrl = process.env.VERGE_API_URL ?? "http://127.0.0.1:8787";
@@ -127,7 +127,7 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
     }
 
     if (assignment.checkpointEnabled) {
-      const runDetail = await getJson<RunDetail>(`/runs/${assignment.runId}`);
+      const runDetail = await getJson<StepRunDetail>(`/runs/${assignment.runId}`);
       const completedProcessKeys = new Set(
         runDetail.processes
           .filter((process) => ["passed", "reused", "skipped"].includes(process.status))
@@ -181,9 +181,22 @@ const executeProcess = async (assignment: ClaimedRunProcess): Promise<number> =>
 
 const main = async (): Promise<void> => {
   while (true) {
-    const claim = await postJson<{ assignment: ClaimedRunProcess | null }>("/workers/claim", {
-      workerId,
-    });
+    let claim: { assignment: ClaimedRunProcess | null };
+    try {
+      claim = await postJson<{ assignment: ClaimedRunProcess | null }>("/workers/claim", {
+        workerId,
+      });
+    } catch (error) {
+      console.error(
+        error instanceof Error ? `Failed to claim work: ${error.stack ?? error.message}` : error,
+      );
+      if (once) {
+        process.exitCode = 1;
+        return;
+      }
+      await sleep(1000);
+      continue;
+    }
 
     if (!claim.assignment) {
       if (once) {

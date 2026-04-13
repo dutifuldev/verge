@@ -59,9 +59,9 @@ The repo now includes:
 Stores:
 
 - repositories
-- run requests
+- run triggers
 - runs
-- processes
+- steps and processes
 - observations
 - events
 - checkpoints
@@ -71,7 +71,7 @@ Stores:
 
 Handles:
 
-- manual run requests
+- manual runs
 - GitHub webhooks
 - planning
 - repository health queries

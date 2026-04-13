@@ -14,14 +14,31 @@ event in -> plan -> run -> record evidence -> query current repository health
 
 If the first version cannot persist evidence and answer useful health questions from it, then it is only a job runner.
 
+## Public Terminology
+
+The intended public runtime model is:
+
+```text
+run -> step -> process -> observation
+```
+
+In plain terms:
+
+- a `run` is one commit-level, PR-level, or manual evaluation
+- a `step` is a major check inside a run, like `build`, `test`, or `lint`
+- a `process` is a smaller concrete computation inside a step, like `api`, `web`, or a shard
+- an `observation` is the recorded result
+
+Some current implementation details still use older internal names such as `run_request`, `run`, and `process_spec`. This plan keeps those names where it is talking about current tables or endpoints, but the public product model above is the one Verge should present.
+
 ## MVP Goal
 
 The first MVP should let a single repository:
 
 - ingest GitHub push and pull request events
-- register a small set of processes
-- decide which processes to run for a change
-- execute those processes through workers
+- register a small set of steps and processes
+- decide which steps and processes to run for a change
+- execute those steps and processes through workers
 - record evidence, logs, artifacts, and run lifecycle
 - show current run progress and current repository health
 - reuse at least one safe cached result
@@ -32,7 +49,7 @@ The first MVP should let a single repository:
 
 The MVP should be able to answer these queries reliably:
 
-- what processes ran for commit X?
+- what steps and processes ran for commit X?
 - what is still running right now?
 - what repo areas were observed by the latest runs?
 - what evidence is fresh, stale, unknown, or failed?
@@ -48,7 +65,7 @@ If a proposed feature does not materially improve one of those answers, it shoul
 - single-repository support
 - self-hosting on the Verge repository as the primary test target
 - GitHub App webhook ingestion
-- process spec registry with static process specs
+- static step registry
 - Postgres-backed planner and work queue
 - worker execution with leases and heartbeats
 - process-level evidence for all processes
@@ -74,7 +91,7 @@ Where adjacent tooling choices are needed, prefer the same ecosystem and a minim
 This matters for two reasons:
 
 - Verge should dogfood a modern, fast toolchain in its own repository
-- the first managed process specs should exercise those tools directly on the Verge repo
+- the first managed steps should exercise those tools directly on the Verge repo
 
 All application code should be written in valid TypeScript. Plain `.js` application files should not be introduced.
 
@@ -187,7 +204,7 @@ The first workspace packages should have these responsibilities:
 - domain types that are not transport-specific
 - planning rules
 - evidence and freshness logic
-- process spec helpers
+- step and process helpers
 - fingerprinting and reuse decision helpers
 
 `packages/db`
@@ -234,7 +251,7 @@ packages:
 - Phase 0 and Phase 1 worker execution target: local subprocess runner
 - Kubernetes execution remains a later deployment target, not the first bootstrap path
 - initial event ingestion order:
-  1. manual run requests
+  1. manual runs
   2. GitHub webhook ingestion
 
 ### Testing and Validation
@@ -244,9 +261,9 @@ packages:
 - formatting: `oxfmt`
 - linting: `oxlint`
 
-### Process Splitting
+### Step Materialization
 
-- Verge should provide a generic process materialization model in TypeScript for all projects that use the library
+- Verge should provide a generic step and process materialization model in TypeScript for all projects that use the library
 - each project should define its own concrete processes in TypeScript config
 - the default result should be a small set of named processes with stable keys
 - finer sharding should happen inside a process only when a process becomes too large
@@ -327,9 +344,9 @@ The first implementation should use a boring control-plane architecture:
 The orchestration model should stay simple:
 
 1. GitHub sends an event.
-2. The API stores a run request.
-3. The planner creates planned process runs.
-4. The planner either marks a run as reused or enqueues it.
+2. The API stores a top-level run trigger record.
+3. The planner creates the steps and concrete processes for that run.
+4. The planner either marks a step as reused or enqueues it.
 5. A worker claims queued work using a lease.
 6. The worker executes the process and streams heartbeats and progress.
 7. The API stores evidence, events, logs, artifacts, and checkpoint metadata.
@@ -339,7 +356,7 @@ The orchestration model should stay simple:
 
 The MVP should implement the following core records.
 
-### Repository and Process Metadata
+### Repository, Step, and Process Metadata
 
 - `repositories`
 - `process_specs`
@@ -376,11 +393,13 @@ The MVP should implement the following core records.
 
 The table names can change, but the MVP must preserve these responsibilities.
 
+The public naming should stay `run -> step -> process -> observation`. The table names below are current implementation-oriented names.
+
 `process_specs`
 
-- stable process spec key
+- stable step key
 - display name
-- process kind
+- step kind
 - execution config
 - reuse policy
 - checkpoint capability
@@ -388,7 +407,7 @@ The table names can change, but the MVP must preserve these responsibilities.
 
 `processes`
 
-- process spec
+- step definition
 - stable process key
 - display label
 - process metadata
@@ -402,10 +421,12 @@ The table names can change, but the MVP must preserve these responsibilities.
 - changed files snapshot
 - request status
 
+Publicly, this is the top-level run trigger record.
+
 `planned_runs`
 
-- process spec
-- run request
+- step
+- top-level run trigger
 - decision reason
 - planned action: `run`, `reuse`, `skip`
 - evidence target areas
@@ -413,7 +434,7 @@ The table names can change, but the MVP must preserve these responsibilities.
 `runs`
 
 - run id
-- process spec
+- step
 - commit SHA
 - execution scope hash
 - current status
@@ -453,7 +474,7 @@ The table names can change, but the MVP must preserve these responsibilities.
 The MVP should not wait for a perfect identity system. Implement the minimum durable version:
 
 1. Accept explicit stable process IDs from cooperative adapters.
-2. Otherwise derive a canonical string from process spec kind, config key, path, logical path, title, and parameterization.
+2. Otherwise derive a canonical string from step kind, config key, path, logical path, title, and parameterization.
 3. Hash that canonical string for storage and joins.
 
 For MVP, do not implement aggressive history-repair heuristics. Store enough metadata to add that later.
@@ -463,7 +484,7 @@ For MVP, do not implement aggressive history-repair heuristics. Store enough met
 Each observation should record an execution scope separate from process identity. The initial scope should include:
 
 - commit SHA
-- process spec version or config hash
+- step version or config hash
 - runtime version
 - platform or runner class
 - dependency lock hash, if available
@@ -478,16 +499,16 @@ Inputs:
 
 - event type
 - changed files
-- process specs
+- step definitions
 - observed areas per process
 - existing evidence freshness
 - reuse policy
 
 Outputs:
 
-- a list of planned runs
-- the processes inside each planned run, when the process spec materializes more than one process
-- a decision reason for each planned run
+- a top-level run plus its planned steps
+- the processes inside each planned step, when the step materializes more than one process
+- a decision reason for each planned step
 - a reuse decision, if applicable
 
 The initial planning rules should be simple:
@@ -499,21 +520,21 @@ The initial planning rules should be simple:
 
 Do not attempt probabilistic scheduling in the MVP.
 
-## Process Materialization Model For MVP
+## Step And Process Materialization Model For MVP
 
 Verge should use a simple runtime model:
 
-process spec -> run -> process -> observation
+run -> step -> process -> observation
 
-A process is one standalone computation with a stable ID.
+A step is a major check inside the run. A process is one standalone computation inside that step with a stable ID.
 
-The library should provide the generic materialization mechanism. Each project should provide the actual process materialization rules in TypeScript.
+The library should provide the generic materialization mechanism. Each project should provide the actual step and process materialization rules in TypeScript.
 
 That means:
 
 - Verge defines materialization kinds and process lifecycle rules
 - a repository defines its own process names and boundaries in TypeScript
-- the planner materializes concrete processes from those definitions for each run
+- the planner materializes concrete steps and processes from those definitions for each run
 
 For MVP, the supported materialization kinds should be:
 
@@ -558,7 +579,7 @@ Implement one narrow, auditable reuse path.
 
 Suggested reuse policy:
 
-- process spec explicitly allows reuse
+- the step explicitly allows reuse
 - execution scope hash matches
 - declared input fingerprint matches
 - prior run status is successful
@@ -582,7 +603,7 @@ The initial checkpoint contract should include:
 
 The planner can prefer resume over fresh execution only when:
 
-- the process spec supports checkpoints
+- the step supports checkpoints
 - the checkpoint is still valid
 - the input fingerprint still matches the resumable boundary rules
 
@@ -618,6 +639,8 @@ The Fastify API should expose a small control-plane surface.
 - `GET /repositories/:repo/pull-requests/:number`
 - `GET /process-specs`
 
+These endpoint names can stay implementation-oriented for MVP even though the public model should be described as runs, steps, and processes.
+
 ### Live Updates
 
 - `GET /streams/runs/:id`
@@ -632,7 +655,7 @@ It needs four screens:
 - repository overview
 - commit or pull request detail
 - run detail
-- process registry
+- step registry
 
 The repository overview should show:
 
@@ -643,7 +666,7 @@ The repository overview should show:
 
 The commit or pull request detail should show:
 
-- planned runs
+- the run and its planned steps
 - reused versus executed work
 - current status
 - linked observations and artifacts
@@ -661,7 +684,7 @@ The run detail should show:
 
 The MVP should validate itself by running Verge on the Verge repo.
 
-That means the first supported repository should be this repository, with process specs that execute Verge's own:
+That means the first supported repository should be this repository, with steps that execute Verge's own:
 
 - lint checks
 - type checks
@@ -669,7 +692,7 @@ That means the first supported repository should be this repository, with proces
 - build
 - docs validation
 
-Those processes should be implemented using the chosen VoidZero-oriented toolchain for this repository, with `oxlint` and `oxfmt` as the default lint/format layer and `vite` as the frontend build foundation.
+Those steps should be implemented using the chosen VoidZero-oriented toolchain for this repository, with `oxlint` and `oxfmt` as the default lint/format layer and `vite` as the frontend build foundation.
 
 This requirement matters because it forces the product to handle real iteration loops instead of a toy demo path.
 
@@ -677,7 +700,7 @@ The self-hosting bar for MVP should be:
 
 - a commit to the Verge repo triggers Verge
 - Verge plans work for the Verge repo
-- Verge executes at least one real Verge process through its own worker path
+- Verge executes at least one real Verge step through its own worker path
 - Verge records the resulting evidence and exposes it in its own UI
 
 ## Delivery Phases
@@ -711,7 +734,7 @@ Bootstrap:
 - Postgres migration setup
 - local dev stack with Postgres
 - filesystem-backed local artifact and checkpoint storage
-- local self-hosting process specs for the Verge repo
+- local self-hosting steps for the Verge repo
 
 Exit criteria:
 
@@ -721,23 +744,23 @@ Exit criteria:
 - the repo has working `oxlint`, `oxfmt`, and `vite`-based commands
 - the workspace dependency graph is clean, with shared logic living in `packages/` instead of cross-importing between apps
 
-### Phase 1: Event Ingestion and Process Registry
+### Phase 1: Event Ingestion and Step Registry
 
 Implement:
 
 - GitHub webhook receiver
 - signature validation
 - repository registration
-- static process spec storage
-- basic run request creation
-- initial Verge-on-Verge process specs
+- static step storage
+- basic top-level run creation
+- initial Verge-on-Verge steps
 
 Exit criteria:
 
-- a GitHub push or pull request event creates a stored run request
-- process specs can be listed from the API
+- a GitHub push or pull request event creates a stored top-level run record
+- step definitions can be listed from the API
 - the Verge repository is registered as the first managed repository
-- process specs exist for `oxlint`, `oxfmt` validation, and `vite`-based build validation where relevant
+- step definitions exist for `oxlint`, `oxfmt` validation, and `vite`-based build validation where relevant
 
 ### Phase 2: Planner and Queue
 
@@ -746,14 +769,14 @@ Implement:
 - repo areas
 - changed-file ingestion
 - deterministic planner
-- planned runs table
+- planned step records
 - queueing and lease model
 - planning decision records
 
 Exit criteria:
 
-- a run request generates planned runs
-- planned runs are marked as `run`, `reuse`, or `skip`
+- a top-level run generates planned steps
+- planned steps are marked as `run`, `reuse`, or `skip`
 - workers can claim queued work safely
 
 ### Phase 3: Worker Execution and Run Lifecycle
@@ -772,7 +795,7 @@ Exit criteria:
 - a worker can execute a real process end to end
 - run state is visible through the API
 - lease expiry and stale heartbeat detection work
-- at least one real Verge repo process runs through the worker path
+- at least one real Verge repo step runs through the worker path
 
 ### Phase 4: Evidence Model and Health Queries
 
@@ -882,8 +905,8 @@ Integration tests should run against a real local Postgres instance and verify t
 
 At minimum, cover:
 
-- creating a manual run request
-- creating runs from process specs
+- creating a manual run
+- creating step runs from step definitions
 - claiming work
 - recording observations
 - updating repo area state
@@ -905,8 +928,8 @@ The most important end-to-end test is Verge running on the Verge repository itse
 
 That means:
 
-- create a run request for the current Verge repo state
-- materialize real Verge processes such as `lint`, `test`, `build`, and `docs:validate`
+- create a run for the current Verge repo state
+- materialize real Verge steps such as `lint`, `test`, `build`, and `docs:validate`
 - execute them through the normal worker path
 - persist observations, artifacts, and health state
 - expose the results through the API and dashboard

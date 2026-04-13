@@ -17,7 +17,8 @@ Verge sits above normal tools like test runners, compilers, linters, release scr
 
 Those tools still do the actual work. Verge decides:
 
-- what processes should run
+- what steps should run
+- what processes should exist inside those steps
 - why they should run
 - what each run observed
 - what can be reused
@@ -37,7 +38,7 @@ Verge asks:
 - what did this run teach us?
 - what parts of the repository are well observed right now?
 - what parts are stale or dark?
-- what is the fastest next process that increases confidence?
+- what is the fastest next step or process that increases confidence?
 
 Each run is treated as a partial observation, not a final verdict.
 
@@ -55,6 +56,20 @@ In that world:
 
 Verge exists to optimize for fast signal, growing confidence, and eventual coverage over time.
 
+## What Counts As a Step
+
+A step is a major check inside a run.
+
+Examples:
+
+- `build`
+- `test`
+- `lint`
+- `typecheck`
+- `docs:validate`
+
+A run will usually contain a small number of steps like these.
+
 ## What Counts As a Process
 
 A process is one standalone computation that reveals something about the state of the repository.
@@ -69,7 +84,7 @@ Examples:
 - one documentation validation pass
 - one agent investigation unit
 
-Higher-level things like `test`, `build`, or `docs:validate` are better thought of as process specs or process families. A process is the concrete computation that gets a stable identity and can actually run.
+Higher-level things like `test`, `build`, or `docs:validate` are better thought of as steps. A process is the concrete computation inside a step that gets a stable identity and can actually run.
 
 ## What Counts As Evidence
 
@@ -91,8 +106,9 @@ A workflow status is only a summary. Evidence is the useful part underneath it.
 Verge models a repository as:
 
 - important areas or surfaces
-- process specs that produce concrete processes
-- runs that execute those processes
+- runs
+- steps inside those runs
+- concrete processes inside those steps
 - a live state made from accumulated evidence over time
 
 From that model, Verge should be able to answer:
@@ -108,9 +124,9 @@ From that model, Verge should be able to answer:
 The main information flow looks like this:
 
 1. A commit, pull request event, manual request, or agent request comes in.
-2. The planner looks at the change, the process spec metadata, and the current evidence state.
-3. Verge decides which process specs matter now and which concrete processes should exist inside each run.
-4. Before starting each run, Verge checks whether it can reuse a past result, resume from a checkpoint, or must start fresh.
+2. The planner looks at the change, the step metadata, and the current evidence state.
+3. Verge decides which steps matter now and which concrete processes should exist inside each step.
+4. Before starting each step, Verge checks whether it can reuse a past result, resume from a checkpoint, or must start fresh.
 5. While work runs, the runner streams heartbeats, logs, progress, artifacts, and any new checkpoints.
 6. Verge stores that information and updates the live model of repository health.
 7. The next run uses that stored state to avoid wasting work.
@@ -134,22 +150,22 @@ Important rule:
 
 That means Verge may save fine-grained data for analysis while only checkpointing at safe process or phase boundaries when resuming work.
 
-## Process Specs And Processes
+## Runs, Steps, And Processes
 
-A run belongs to a process spec and contains one or more concrete processes.
+A run is one commit-level, PR-level, or manual evaluation.
 
-A process spec is the reusable recipe, such as `test`, `build`, or `docs:validate`.
+A step is a major check inside that run, such as `test`, `build`, or `docs:validate`.
 
-A process is one standalone computation with a stable identity.
+A process is one standalone computation inside a step with a stable identity.
 
 Examples of processes:
 
-- the `api` part of a test run
+- the `api` part of the `test` step
 - one smoke-test scenario
 - one build target
 - one single test case
 
-This is the level Verge should identify, schedule, retry, and checkpoint.
+Runs collect steps. Steps collect processes. Processes are the smallest concrete executions Verge should identify, schedule, retry, and checkpoint.
 
 ## Identity Model
 
@@ -157,9 +173,10 @@ Verge should use a general identity model that is not tied to tests.
 
 The core terms should be:
 
-- process spec: the reusable recipe
+- run: one commit-level, PR-level, or manual evaluation
+- step: a major check inside a run
 - process: one standalone computation with a stable ID
-- process ID: the stable identity of that computation
+- process ID: the stable identity of that process
 - observation: one recorded result for that process under a particular execution scope
 
 Examples of processes:
@@ -190,8 +207,8 @@ When no explicit process ID exists, Verge should derive one from the structure o
 
 The derived identity should usually include:
 
-- process spec kind or framework
-- process spec key or config key
+- step kind or framework
+- step key or config key
 - file or source path, if relevant
 - logical path within the process, such as suite path or target path
 - process title or logical name

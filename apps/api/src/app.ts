@@ -124,6 +124,7 @@ const createPlannedRuns = async (
     changedFiles?: string[];
     requestedProcessSpecKeys?: string[];
     resumeFromCheckpoint?: boolean;
+    disableReuse?: boolean;
     pullRequestNumber?: number;
     eventIngestionId?: string;
   },
@@ -169,31 +170,6 @@ const createPlannedRuns = async (
       continue;
     }
 
-    if (plan.processSpec.reuseEnabled) {
-      const reusableRun = await findReusableRun(db, {
-        processSpecId: specRow.id,
-        fingerprint: plan.fingerprint,
-      });
-
-      if (reusableRun) {
-        const reusedRun = await createRun(db, {
-          runRequestId: runRequest.id,
-          processSpecId: specRow.id,
-          fingerprint: plan.fingerprint,
-          status: "reused",
-          planReason: `reused prior successful run ${reusableRun.id}`,
-          reusedFromRunId: reusableRun.id,
-        });
-        await cloneRunForReuse(db, {
-          sourceRunId: reusableRun.id,
-          newRunId: reusedRun.id,
-        });
-        await refreshRunStatus(db, reusedRun.id);
-        createdRunIds.push(reusedRun.id);
-        continue;
-      }
-    }
-
     if (input.resumeFromCheckpoint && plan.processSpec.checkpointEnabled) {
       const checkpoint = await findLatestCheckpoint(db, {
         processSpecId: specRow.id,
@@ -234,6 +210,31 @@ const createPlannedRuns = async (
 
         await refreshRunStatus(db, resumedRun.id);
         createdRunIds.push(resumedRun.id);
+        continue;
+      }
+    }
+
+    if (!input.disableReuse && plan.processSpec.reuseEnabled) {
+      const reusableRun = await findReusableRun(db, {
+        processSpecId: specRow.id,
+        fingerprint: plan.fingerprint,
+      });
+
+      if (reusableRun) {
+        const reusedRun = await createRun(db, {
+          runRequestId: runRequest.id,
+          processSpecId: specRow.id,
+          fingerprint: plan.fingerprint,
+          status: "reused",
+          planReason: `reused prior successful run ${reusableRun.id}`,
+          reusedFromRunId: reusableRun.id,
+        });
+        await cloneRunForReuse(db, {
+          sourceRunId: reusableRun.id,
+          newRunId: reusedRun.id,
+        });
+        await refreshRunStatus(db, reusedRun.id);
+        createdRunIds.push(reusedRun.id);
         continue;
       }
     }
@@ -356,6 +357,7 @@ export const createApiApp = async (context: ApiContext): Promise<FastifyInstance
         ? { requestedProcessSpecKeys: input.requestedProcessSpecKeys }
         : {}),
       ...(input.resumeFromCheckpoint ? { resumeFromCheckpoint: input.resumeFromCheckpoint } : {}),
+      ...(input.disableReuse ? { disableReuse: input.disableReuse } : {}),
       ...(input.branch ? { branch: input.branch } : {}),
     });
   });

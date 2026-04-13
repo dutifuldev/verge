@@ -134,7 +134,7 @@ Open the UI:
 http://127.0.0.1:5173
 ```
 
-Then create a manual run request through the UI or with the API:
+Then create a manual run through the UI or with the API:
 
 ```bash
 curl \
@@ -197,7 +197,7 @@ What should happen:
 1. GitHub sends the webhook to the `ngrok` URL
 2. `ngrok` forwards it to `127.0.0.1:8787`
 3. Verge validates the webhook signature
-4. Verge creates a run request
+4. Verge creates a run
 5. the worker claims the work
 6. the UI shows the run and repository health
 
@@ -261,7 +261,7 @@ This is the cleanest order:
 4. export `DATABASE_URL`, `GITHUB_WEBHOOK_SECRET`, and `VERGE_ALLOWED_ORIGINS`
 5. `pnpm dev`
 6. verify `http://127.0.0.1:8787/healthz`
-7. create a manual run request locally
+7. create a manual run locally
 8. start `ngrok http 127.0.0.1:8787`
 9. configure GitHub webhook to `https://<ngrok-url>/webhooks/github`
 10. push a commit or update a PR
