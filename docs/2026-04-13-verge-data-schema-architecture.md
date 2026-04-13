@@ -27,8 +27,10 @@ The data model should follow these rules:
 - a `process` is the smallest meaningful thing Verge tracks as its own result
 - a `process run` is one execution of one process in one step run
 - process identity should be stable across runs
-- execution state should be separate from stable identity
+- execution history should be self-contained on execution rows
+- current config should be separate from historical evidence
 - execution convenience should not become a first-class product object
+- `repo_area_state` should be a derived read model, not the source of truth
 
 That means Verge should not expose product concepts like chunk, batch, or shard as top-level objects. If execution gets optimized internally, that should stay an implementation detail.
 
@@ -57,13 +59,14 @@ The important identity rules are:
 - `StepSpec` is keyed by `(repository_id, key)`
 - `Process` is keyed by `(step_spec_id, key)`
 - `Run` has its own UUID and is not keyed only by commit SHA
-- `StepRun` is keyed by its own UUID, and usually unique on `(run_id, step_spec_id)`
-- `ProcessRun` is keyed by its own UUID, and usually unique on `(step_run_id, process_id)`
+- `StepRun` is keyed by its own UUID, and usually unique on `(run_id, step_key)`
+- `ProcessRun` is keyed by its own UUID, and usually unique on `(step_run_id, process_key)`
 
 This means:
 
 - a process has one stable identity across runs
 - each time it runs, it gets a new `process_run.id`
+- the execution rows still make sense even if current step config changes later
 
 ## Type-Level Schemas
 
@@ -135,7 +138,15 @@ type Run = {
 type StepRun = {
   id: string;
   runId: string;
-  stepSpecId: string;
+  stepSpecId: string | null;
+  stepKey: string;
+  displayName: string;
+  kind: string;
+  baseCommand: string[];
+  cwd: string;
+  observedAreaKeys: string[];
+  materialization: unknown;
+  configFingerprint: string;
   fingerprint: string;
   status: "queued" | "running" | "passed" | "failed" | "reused" | "interrupted";
   planReason: string;
@@ -149,7 +160,12 @@ type StepRun = {
 type ProcessRun = {
   id: string;
   stepRunId: string;
-  processId: string;
+  processId: string | null;
+  processKey: string;
+  displayName: string;
+  kind: string;
+  filePath: string | null;
+  metadata: Record<string, unknown>;
   status: "queued" | "claimed" | "running" | "passed" | "failed" | "reused" | "skipped" | "interrupted";
   selectionPayload: Record<string, unknown>;
   attemptCount: number;
@@ -265,7 +281,9 @@ Constraints:
 
 ### `step_specs`
 
-One row per step definition inside one repository.
+One current step definition inside one repository.
+
+This is config state, not the historical source of truth.
 
 Columns:
 
@@ -293,7 +311,9 @@ Constraints:
 
 One stable process identity inside one step spec.
 
-This is not one execution. This is the process catalog.
+This is not one execution. This is the current process catalog.
+
+This table is optional in spirit. It is useful for the latest known process set, but old runs should not depend on it staying unchanged forever.
 
 Columns:
 
@@ -343,7 +363,15 @@ Columns:
 
 - `id uuid primary key`
 - `run_id uuid not null references runs(id)`
-- `step_spec_id uuid not null references step_specs(id)`
+- `step_spec_id uuid null references step_specs(id)`
+- `step_key text not null`
+- `display_name text not null`
+- `kind text not null`
+- `base_command jsonb not null`
+- `cwd text not null`
+- `observed_area_keys jsonb not null`
+- `materialization jsonb not null`
+- `config_fingerprint text not null`
 - `fingerprint text not null`
 - `status text not null`
 - `plan_reason text not null`
@@ -355,11 +383,12 @@ Columns:
 
 Constraints:
 
-- `unique(run_id, step_spec_id)`
+- `unique(run_id, step_key)`
 
 Indexes:
 
 - `(step_spec_id, fingerprint)`
+- `(run_id, step_key)`
 - `(status, created_at desc)`
 
 ### `process_runs`
@@ -370,7 +399,12 @@ Columns:
 
 - `id uuid primary key`
 - `step_run_id uuid not null references step_runs(id)`
-- `process_id uuid not null references processes(id)`
+- `process_id uuid null references processes(id)`
+- `process_key text not null`
+- `display_name text not null`
+- `kind text not null`
+- `file_path text null`
+- `metadata jsonb not null default '{}'::jsonb`
 - `status text not null`
 - `selection_payload jsonb not null`
 - `attempt_count integer not null default 0`
@@ -383,11 +417,12 @@ Columns:
 
 Constraints:
 
-- `unique(step_run_id, process_id)`
+- `unique(step_run_id, process_key)`
 
 Indexes:
 
 - `(step_run_id, status)`
+- `(process_key, created_at desc)`
 - `(claimed_by, lease_expires_at)`
 
 ### `run_events`
@@ -476,6 +511,8 @@ Indexes:
 
 Current rolled-up health for one repo area.
 
+This is a projection for fast reads. It should be recomputable from runs, process runs, and observations.
+
 Columns:
 
 - `repo_area_id uuid primary key references repo_areas(id)`
@@ -494,9 +531,9 @@ The core relationships should be:
 - one `StepSpec` has many stable `Process`
 - one `Repository` has many `Run`
 - one `Run` has many `StepRun`
-- one `StepRun` belongs to one `StepSpec`
+- one `StepRun` may point to one current `StepSpec`, but it keeps its own step snapshot
 - one `StepRun` has many `ProcessRun`
-- one `ProcessRun` belongs to one stable `Process`
+- one `ProcessRun` may point to one current `Process`, but it keeps its own process snapshot
 - one `StepRun` can have many `RunEvent`
 - one `StepRun` can have many `Observation`
 - one `StepRun` can have many `Artifact`
@@ -538,22 +575,27 @@ That lets Verge keep:
 - structured evidence
 - resumable progress
 
+The important point is that `process_runs` should already contain the fields needed to understand what ran. Old history should not depend on a mutable catalog row still looking the same later.
+
 ## How Processes Get Created
 
-Stable processes should be created from step materialization and discovery.
+Current process catalog rows should be created from step materialization and discovery.
 
 The flow should be:
 
 1. Verge loads a `StepSpec`.
 2. Verge materializes the real processes for that step.
 3. Verge upserts them into `processes` using `(step_spec_id, key)`.
-4. When a run happens, Verge creates `process_runs` for the chosen `StepRun`.
+4. When a run happens, Verge creates `step_runs` with a step snapshot.
+5. Verge creates `process_runs` with process snapshots for the chosen `StepRun`.
 
 So the process key should not be globally unique by itself. It should be scoped under the step spec.
 
 That means the real stable identity is:
 
 - `step_spec_id + process.key`
+
+But the durable historical record lives on `process_runs`, not on endlessly versioned process definitions.
 
 ## Why This Model Is Better Than The Current One
 
@@ -569,6 +611,9 @@ The model in this document is cleaner because it separates:
 - stable identity from execution
 - product concepts from implementation details
 - run-level, step-level, and process-level records
+- current config from immutable execution history
+
+It also avoids a storage-heavy design where every discovered test definition gets a new historical version row every time test names or files change.
 
 ## Recommended Migration Direction
 
@@ -580,7 +625,9 @@ The clean migration path from the current implementation is:
 4. rename `run_processes` to `process_runs`
 5. keep `processes` as the stable process catalog
 6. move `path_prefixes` into `repo_areas` instead of keeping them only in config memory
-7. add `process_id` foreign keys into `process_runs` and `observations`
+7. add step snapshot fields onto `step_runs`
+8. add process snapshot fields onto `process_runs`
+9. keep `process_id` foreign keys in `process_runs` and `observations` only as optional links to current catalog rows
 
 That would make the stored schema match the product language much more directly.
 
@@ -588,10 +635,10 @@ That would make the stored schema match the product language much more directly.
 
 The clean Verge data model should be:
 
-- `processes` = the stable things Verge knows about
-- `process_runs` = one execution of those things
-- `step_specs` = reusable step definitions
-- `step_runs` = one execution of a step in a run
+- `step_specs` = current reusable step definitions
+- `processes` = current stable process catalog
 - `runs` = one whole evaluation for a commit, PR event, or manual trigger
+- `step_runs` = one execution of a step in a run, with a step snapshot
+- `process_runs` = one execution of a process in a step, with a process snapshot
 
-That is the most durable and least confusing shape for Verge.
+That is the most durable and least storage-wasteful shape for Verge.
