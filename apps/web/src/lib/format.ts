@@ -50,7 +50,7 @@ export const formatDuration = (
   finishedAt: string | null,
   durationMs?: number | null,
 ): string => {
-  if (durationMs !== undefined) {
+  if (durationMs !== undefined && durationMs !== null) {
     return formatDurationMs(durationMs);
   }
 

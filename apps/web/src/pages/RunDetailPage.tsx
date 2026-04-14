@@ -14,10 +14,12 @@ import { buildStepPath, navigate } from "../lib/routing.js";
 export const RunDetailPage = ({
   run,
   treemap,
+  treemapError,
   error,
 }: {
   run: RunDetail | null;
   treemap: RunTreemap | null;
+  treemapError: string | null;
   error: string | null;
 }) => {
   if (!run) {
@@ -85,7 +87,12 @@ export const RunDetailPage = ({
             </p>
           </div>
         </header>
-        <RunTreemapView runId={run.id} repositorySlug={run.repositorySlug} treemapData={treemap} />
+        <RunTreemapView
+          runId={run.id}
+          repositorySlug={run.repositorySlug}
+          treemapData={treemap}
+          treemapError={treemapError}
+        />
       </section>
 
       <section className="panel tablePanel">

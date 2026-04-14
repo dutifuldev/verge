@@ -10,6 +10,7 @@ export const useRunDetailData = (route: AppRoute) => {
   const [treemap, setTreemap] = useState<RunTreemap | null>(null);
   const [step, setStep] = useState<StepRunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [treemapError, setTreemapError] = useState<string | null>(null);
 
   useEffect(() => {
     if (route.name !== "run" && route.name !== "step") {
@@ -17,12 +18,14 @@ export const useRunDetailData = (route: AppRoute) => {
       setTreemap(null);
       setStep(null);
       setError(null);
+      setTreemapError(null);
       return;
     }
 
     setRun(null);
     setTreemap(null);
     setStep(null);
+    setTreemapError(null);
 
     const refresh = async (): Promise<void> => {
       try {
@@ -34,8 +37,16 @@ export const useRunDetailData = (route: AppRoute) => {
           );
           setStep(nextStep);
         } else {
-          const nextTreemap = await fetchJson<RunTreemap>(`/runs/${route.runId}/treemap`);
-          setTreemap(nextTreemap);
+          try {
+            const nextTreemap = await fetchJson<RunTreemap>(`/runs/${route.runId}/treemap`);
+            setTreemap(nextTreemap);
+            setTreemapError(null);
+          } catch (nextTreemapError) {
+            setTreemap(null);
+            setTreemapError(
+              describeLoadError(route, nextTreemapError, "Failed to load duration map"),
+            );
+          }
         }
         setError(null);
       } catch (nextError) {
@@ -50,5 +61,5 @@ export const useRunDetailData = (route: AppRoute) => {
     return () => window.clearInterval(interval);
   }, [route]);
 
-  return { run, treemap, step, error };
+  return { run, treemap, step, error, treemapError };
 };

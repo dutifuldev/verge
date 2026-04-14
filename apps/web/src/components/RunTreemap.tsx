@@ -77,10 +77,12 @@ export const RunTreemapView = ({
   runId,
   repositorySlug,
   treemapData,
+  treemapError,
 }: {
   runId: string;
   repositorySlug: string;
   treemapData: RunTreemap | null;
+  treemapError: string | null;
 }) => {
   const [hoveredNode, setHoveredNode] = useState<{
     node: TreemapNode;
@@ -91,8 +93,8 @@ export const RunTreemapView = ({
   if (!treemapData) {
     return (
       <EmptyState
-        title="Loading duration map"
-        body="Fetching the run treemap and process duration breakdown."
+        title={treemapError ? "Duration map unavailable" : "Loading duration map"}
+        body={treemapError ?? "Fetching the run treemap and process duration breakdown."}
       />
     );
   }
