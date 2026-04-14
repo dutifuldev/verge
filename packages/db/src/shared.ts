@@ -80,6 +80,7 @@ type RunsTable = {
   created_at: Generated<Date>;
   started_at: Date | null;
   finished_at: Date | null;
+  duration_ms: number | null;
 };
 
 type StepRunsTable = {
@@ -103,6 +104,7 @@ type StepRunsTable = {
   created_at: Generated<Date>;
   started_at: Date | null;
   finished_at: Date | null;
+  duration_ms: number | null;
 };
 
 type ProcessRunsTable = {
@@ -123,6 +125,7 @@ type ProcessRunsTable = {
   created_at: Generated<Date>;
   started_at: Date | null;
   finished_at: Date | null;
+  duration_ms: number | null;
 };
 
 type RunEventsTable = {
@@ -247,6 +250,23 @@ export const migrateDatabase = async (db: Kysely<VergeDatabase>): Promise<void> 
 export const json = (value: unknown): string => JSON.stringify(value);
 
 export const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
+
+export const durationMsBetween = (
+  startedAt: Date | null,
+  finishedAt: Date | null,
+): number | null => {
+  if (!startedAt || !finishedAt) {
+    return null;
+  }
+
+  return Math.max(0, finishedAt.getTime() - startedAt.getTime());
+};
+
+export const coalesceDurationMs = (
+  storedDurationMs: number | null,
+  startedAt: Date | null,
+  finishedAt: Date | null,
+): number | null => storedDurationMs ?? durationMsBetween(startedAt, finishedAt);
 
 export const parseJson = <T>(value: unknown): T => {
   if (typeof value === "string") {

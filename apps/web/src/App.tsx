@@ -31,7 +31,7 @@ export const App = () => {
   const currentRepositorySlug = route.repositorySlug ?? preferredRepositorySlug;
   const { health, processSpecs, error: overviewError } = useOverviewData(currentRepositorySlug);
   const { runsPage, error: runsError } = useRunsPageData(route, currentRepositorySlug);
-  const { run, step, error: runError } = useRunDetailData(route);
+  const { run, treemap, step, error: runError, treemapError } = useRunDetailData(route);
 
   const [commitSha, setCommitSha] = useState("");
   const [branch, setBranch] = useState("main");
@@ -319,7 +319,9 @@ export const App = () => {
         />
       ) : null}
 
-      {route.name === "run" ? <RunDetailPage run={run} error={error} /> : null}
+      {route.name === "run" ? (
+        <RunDetailPage run={run} treemap={treemap} treemapError={treemapError} error={error} />
+      ) : null}
       {route.name === "step" ? <StepDetailPage run={run} step={step} error={error} /> : null}
     </main>
   );

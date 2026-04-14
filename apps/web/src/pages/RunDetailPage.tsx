@@ -1,6 +1,7 @@
-import type { RunDetail } from "@verge/contracts";
+import type { RunDetail, RunTreemap } from "@verge/contracts";
 
 import { EmptyState, StatusPill } from "../components/common.js";
+import { RunTreemapView } from "../components/RunTreemap.js";
 import {
   classifyStepExecutionMode,
   formatDateTime,
@@ -10,7 +11,17 @@ import {
 } from "../lib/format.js";
 import { buildStepPath, navigate } from "../lib/routing.js";
 
-export const RunDetailPage = ({ run, error }: { run: RunDetail | null; error: string | null }) => {
+export const RunDetailPage = ({
+  run,
+  treemap,
+  treemapError,
+  error,
+}: {
+  run: RunDetail | null;
+  treemap: RunTreemap | null;
+  treemapError: string | null;
+  error: string | null;
+}) => {
   if (!run) {
     return (
       <EmptyState
@@ -57,13 +68,31 @@ export const RunDetailPage = ({ run, error }: { run: RunDetail | null; error: st
         </div>
         <div className="summaryCard">
           <span className="summaryLabel">Duration</span>
-          <strong>{formatDuration(run.startedAt, run.finishedAt)}</strong>
+          <strong>{formatDuration(run.startedAt, run.finishedAt, run.durationMs)}</strong>
           <span className="summaryMeta">
             {run.startedAt
               ? `${formatDateTime(run.startedAt)} to ${formatDateTime(run.finishedAt)}`
               : "Pending"}
           </span>
         </div>
+      </section>
+
+      <section className="panel">
+        <header className="panelHeader">
+          <div>
+            <h2>Duration map</h2>
+            <p className="secondaryText">
+              Area shows accumulated process time for this run. Color shows the final status for
+              each node.
+            </p>
+          </div>
+        </header>
+        <RunTreemapView
+          runId={run.id}
+          repositorySlug={run.repositorySlug}
+          treemapData={treemap}
+          treemapError={treemapError}
+        />
       </section>
 
       <section className="panel tablePanel">
@@ -101,7 +130,7 @@ export const RunDetailPage = ({ run, error }: { run: RunDetail | null; error: st
                   <td>{step.processCount}</td>
                   <td>{formatDateTime(step.startedAt)}</td>
                   <td>{formatDateTime(step.finishedAt)}</td>
-                  <td>{formatDuration(step.startedAt, step.finishedAt)}</td>
+                  <td>{formatDuration(step.startedAt, step.finishedAt, step.durationMs)}</td>
                   <td>
                     <a
                       className="tableLink"

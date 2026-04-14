@@ -8,6 +8,7 @@ import {
   getRepositoryBySlug,
   getRepositoryHealth,
   getRunDetail,
+  getRunTreemap,
   getStepRunDetail,
   listRepositories,
   listRepositoryRuns,
@@ -55,6 +56,17 @@ export const registerPublicRoutes = (app: FastifyInstance, context: ApiContext):
       return reply.code(404).send({ message: "Run not found" });
     }
     return detail;
+  });
+
+  app.get("/runs/:id/treemap", async (request, reply) => {
+    const treemap = await getRunTreemap(
+      context.connection.db,
+      (request.params as { id: string }).id,
+    );
+    if (!treemap) {
+      return reply.code(404).send({ message: "Run not found" });
+    }
+    return treemap;
   });
 
   app.get("/runs/:runId/steps/:stepId", async (request, reply) => {
