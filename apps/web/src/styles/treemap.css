@@ -1,0 +1,153 @@
+.treemapSection {
+  display: grid;
+  gap: 16px;
+}
+
+.treemapLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.treemapLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.treemapLegendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.treemapLegendSwatch.passed {
+  background: rgba(63, 185, 80, 0.92);
+}
+
+.treemapLegendSwatch.failed {
+  background: rgba(248, 81, 73, 0.92);
+}
+
+.treemapLegendSwatch.reused {
+  background: rgba(47, 129, 247, 0.92);
+}
+
+.treemapLegendSwatch.running {
+  background: rgba(210, 153, 34, 0.92);
+}
+
+.treemapLegendSwatch.queued {
+  background: rgba(139, 148, 158, 0.82);
+}
+
+.treemapLegendSwatch.interrupted {
+  background: rgba(210, 153, 34, 0.76);
+}
+
+.treemapWrap {
+  position: relative;
+}
+
+.treemapSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(22, 27, 34, 0.94), rgba(13, 17, 23, 1)), var(--canvas-default);
+}
+
+.treemapNodeRect {
+  cursor: pointer;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1px;
+  transition:
+    fill 140ms ease,
+    stroke 140ms ease,
+    opacity 140ms ease;
+}
+
+.treemapNodeRect:hover {
+  stroke: rgba(240, 246, 252, 0.52);
+}
+
+.treemapNodeRect.status-passed {
+  fill: rgba(35, 134, 54, 0.88);
+}
+
+.treemapNodeRect.status-failed {
+  fill: rgba(218, 54, 51, 0.92);
+}
+
+.treemapNodeRect.status-reused {
+  fill: rgba(31, 111, 235, 0.88);
+}
+
+.treemapNodeRect.status-running {
+  fill: rgba(154, 103, 0, 0.92);
+}
+
+.treemapNodeRect.status-queued,
+.treemapNodeRect.status-planned,
+.treemapNodeRect.status-skipped {
+  fill: rgba(110, 118, 129, 0.62);
+}
+
+.treemapNodeRect.status-interrupted {
+  fill: rgba(187, 128, 9, 0.88);
+}
+
+.treemapNodeRect.status-muted {
+  fill: rgba(110, 118, 129, 0.52);
+}
+
+.treemapLabel,
+.treemapMeta {
+  pointer-events: none;
+  fill: rgba(240, 246, 252, 0.98);
+}
+
+.treemapLabel {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.treemapMeta {
+  font-size: 11px;
+  fill: rgba(230, 237, 243, 0.86);
+}
+
+.treemapTooltip {
+  position: fixed;
+  z-index: 40;
+  width: min(380px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid rgba(48, 54, 61, 0.94);
+  border-radius: var(--radius-md);
+  background: rgba(13, 17, 23, 0.96);
+  box-shadow: 0 16px 40px rgba(1, 4, 9, 0.52);
+  backdrop-filter: blur(14px);
+}
+
+.treemapTooltipHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.treemapTooltipGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 110px) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: start;
+  font-size: 13px;
+}

@@ -1,0 +1,205 @@
+.panel {
+  padding: 20px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.panelHeader h2,
+.emptyState h3 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.panelLink {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.panelLink:hover {
+  text-decoration: underline;
+}
+
+.twoColumnLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.formGrid,
+.filterGrid,
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.span2 {
+  grid-column: 1 / -1;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.checkboxField {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.checkboxField input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.primaryButton,
+.secondaryButton {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 9px 14px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.primaryButton {
+  border-color: rgba(240, 246, 252, 0.12);
+  background: var(--accent-emphasis);
+  color: #fff;
+}
+
+.primaryButton:hover {
+  background: #388bfd;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.secondaryButton {
+  background: #21262d;
+  color: var(--fg-default);
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #30363d;
+}
+
+.keyValueList,
+.stackList,
+.specGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.keyValueRow,
+.listButton {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: rgba(13, 17, 23, 0.44);
+}
+
+.listButton {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+}
+
+.listButton:hover,
+.clickableRow:hover {
+  background: rgba(177, 186, 196, 0.08);
+}
+
+.specGrid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.specCard,
+.entityCard,
+.timelineItem,
+.emptyState {
+  padding: 16px;
+}
+
+.specCard p,
+.emptyState p,
+.cellStack,
+.keyValueRow strong,
+.entityCard strong {
+  margin: 0;
+}
+
+.specCard p {
+  margin-top: 8px;
+  color: var(--fg-muted);
+}
+
+.subtleBadge,
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border-default);
+}
+
+.subtleBadge {
+  background: rgba(110, 118, 129, 0.1);
+  color: var(--fg-muted);
+}
+
+.statusPill.good {
+  color: var(--success-fg);
+  background: rgba(63, 185, 80, 0.16);
+  border-color: rgba(63, 185, 80, 0.28);
+}
+
+.statusPill.bad {
+  color: var(--danger-fg);
+  background: rgba(248, 81, 73, 0.16);
+  border-color: rgba(248, 81, 73, 0.28);
+}
+
+.statusPill.active {
+  color: var(--accent);
+  background: rgba(47, 129, 247, 0.16);
+  border-color: rgba(47, 129, 247, 0.28);
+}
+
+.statusPill.muted {
+  color: var(--neutral-fg);
+  background: rgba(110, 118, 129, 0.16);
+  border-color: rgba(110, 118, 129, 0.28);
+}
+
+.tablePanel {
+  overflow: hidden;
+}

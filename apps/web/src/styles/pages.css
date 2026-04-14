@@ -1,0 +1,162 @@
+.panelSection {
+  padding: 0 16px 16px;
+}
+
+.tableScroller {
+  overflow-x: auto;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+}
+
+.dataTable {
+  width: 100%;
+  min-width: 920px;
+  background: var(--canvas-default);
+}
+
+.dataTable th,
+.dataTable td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  text-align: left;
+  vertical-align: top;
+}
+
+.dataTable th {
+  position: sticky;
+  top: 0;
+  background: rgba(22, 27, 34, 0.98);
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dataTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.dataTable tbody tr:target,
+.dataTable tbody tr.processRowHighlighted {
+  background: rgba(47, 129, 247, 0.18);
+}
+
+.clickableRow {
+  cursor: pointer;
+}
+
+.tableLink {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tableLink:hover,
+.tableLink:focus-visible {
+  text-decoration: underline;
+}
+
+.cellStack {
+  display: grid;
+  gap: 4px;
+}
+
+.clampLine {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.paginationBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.codeBlock,
+.codeList,
+.monoText {
+  font-family:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.monoText {
+  font-size: 13px;
+}
+
+.codeBlock,
+.codeList {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--canvas-inset);
+  color: #c9d1d9;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.entityCard,
+.timelineItem {
+  display: grid;
+  gap: 12px;
+}
+
+.infoGrid {
+  align-items: start;
+}
+
+.breakText {
+  overflow-wrap: anywhere;
+}
+
+.errorBanner {
+  padding: 12px 14px;
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  border-radius: var(--radius-md);
+  background: rgba(248, 81, 73, 0.12);
+  color: #ffb1af;
+}
+
+.emptyState {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 1100px) {
+  .overviewHeader,
+  .twoColumnLayout,
+  .summaryGrid,
+  .filterGrid,
+  .infoGrid,
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .span2 {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 780px) {
+  .appShell {
+    width: min(100vw - 16px, 1440px);
+    padding-top: 16px;
+  }
+
+  .topbar,
+  .paginationBar,
+  .panelHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topnav {
+    flex-wrap: wrap;
+  }
+}
