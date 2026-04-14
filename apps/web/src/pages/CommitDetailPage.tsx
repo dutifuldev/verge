@@ -1,6 +1,6 @@
 import type { CommitDetail, CommitTreemap } from "@verge/contracts";
 
-import { EmptyState, StatusPill } from "../components/common.js";
+import { CopyButton, EmptyState, StatusPill } from "../components/common.js";
 import { TreemapView } from "../components/RunTreemap.js";
 import {
   formatDateTime,
@@ -33,20 +33,32 @@ export const CommitDetailPage = ({
     );
   }
 
+  const commitTimeLabel = commit.committedAt
+    ? formatRelativeTime(commit.committedAt)
+    : commit.runs[0]?.createdAt
+      ? formatRelativeTime(commit.runs[0].createdAt)
+      : "Unknown time";
+
   return (
     <div className="pageStack">
       <section className="pageHeader">
         <div>
-          <h1>{commit.commitTitle ?? `Commit ${shortSha(commit.commitSha)}`}</h1>
-          <p className="pageIntro">
-            This page shows the converged health for one commit across all runs, plus the attempt
-            history that produced it.
-          </p>
+          <h1>{commit.commitTitle ?? shortSha(commit.commitSha)}</h1>
+          <div className="commitMetaLine secondaryText">
+            <span>{commit.commitAuthorName ?? "Unknown author"}</span>
+            <span>{commitTimeLabel}</span>
+            <span className="monoText">{shortSha(commit.commitSha)}</span>
+            <CopyButton value={commit.commitSha} label="Copy" />
+          </div>
         </div>
         <div className="badgeRow">
           <StatusPill status={commit.status} />
+          <span className="subtleBadge">{commit.coveragePercent}% coverage</span>
+          <span className="subtleBadge">
+            {commit.coveredProcessCount} / {commit.expectedProcessCount} processes
+          </span>
           <span className="subtleBadge">{commit.steps.length} steps</span>
-          <span className="subtleBadge">{commit.processes.length} processes</span>
+          <span className="subtleBadge">{commit.healthyProcessCount} healthy selected</span>
           <span className="subtleBadge">{commit.runs.length} attempts</span>
         </div>
       </section>

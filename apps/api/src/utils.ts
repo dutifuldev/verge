@@ -102,6 +102,63 @@ export const resolveCommitTitle = async (
   return `Commit ${commitSha.slice(0, 7)}`;
 };
 
+export type CommitMetadata = {
+  commitTitle: string | null;
+  commitAuthorName: string | null;
+  committedAt: string | null;
+};
+
+export const resolveCommitMetadataMap = async (
+  repositoryRootPath: string,
+  commits: Array<{ commitSha: string; fallbackTitle?: string | null }>,
+): Promise<Map<string, CommitMetadata>> => {
+  const metadata = new Map<string, CommitMetadata>();
+  const uniqueCommits = commits.filter(
+    (commit, index, values) =>
+      values.findIndex((candidate) => candidate.commitSha === commit.commitSha) === index,
+  );
+
+  if (uniqueCommits.length === 0) {
+    return metadata;
+  }
+
+  for (const commit of uniqueCommits) {
+    metadata.set(commit.commitSha, {
+      commitTitle: commit.fallbackTitle?.trim() || null,
+      commitAuthorName: null,
+      committedAt: null,
+    });
+  }
+
+  try {
+    const output = await runCommand(
+      "git",
+      [
+        "show",
+        "-s",
+        "--format=%H%x00%s%x00%an%x00%cI",
+        ...uniqueCommits.map((commit) => commit.commitSha),
+      ],
+      repositoryRootPath,
+    );
+
+    for (const line of output.split("\n").filter(Boolean)) {
+      const [commitSha, title, authorName, committedAt] = line.split("\u0000");
+      if (!commitSha) {
+        continue;
+      }
+
+      metadata.set(commitSha, {
+        commitTitle: title?.trim() || metadata.get(commitSha)?.commitTitle || null,
+        commitAuthorName: authorName?.trim() || null,
+        committedAt: committedAt?.trim() || null,
+      });
+    }
+  } catch {}
+
+  return metadata;
+};
+
 export const sendSse = (reply: {
   raw: NodeJS.WritableStream & {
     writeHead?: (statusCode: number, headers: Record<string, string>) => void;

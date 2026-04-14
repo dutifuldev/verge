@@ -1,10 +1,8 @@
 import type { PaginatedCommitList } from "@verge/contracts";
 
-import { EmptyState, StatusPill } from "../components/common.js";
-import { formatRelativeTime } from "../lib/format.js";
-import { buildCommitPath, buildRepositoryRunsPath, navigate } from "../lib/routing.js";
-
-const clampPercent = (value: number): number => Math.max(0, Math.min(100, value));
+import { CopyButton, EmptyState, StatusPill } from "../components/common.js";
+import { formatRelativeTime, shortSha } from "../lib/format.js";
+import { buildCommitPath, navigate } from "../lib/routing.js";
 
 export const CommitsPage = ({
   repositorySlug,
@@ -22,47 +20,20 @@ export const CommitsPage = ({
   return (
     <div className="pageStack">
       <section className="pageHeader">
-        <div>
-          <h1>Commits</h1>
-          <p className="pageIntro">
-            One row per commit. Open a commit to inspect its converged health and the attempts that
-            produced it.
-          </p>
-        </div>
+        <h1>Commits</h1>
       </section>
 
-      <section className="panel tablePanel">
-        <header className="panelHeader">
-          <div>
-            <h2>Commit health</h2>
-            <p className="secondaryText">
-              This is the primary repository view. Runs stay available as secondary attempt history.
-            </p>
-          </div>
-          {repositorySlug ? (
-            <a
-              className="panelLink"
-              href={buildRepositoryRunsPath(repositorySlug)}
-              onClick={(event) => {
-                event.preventDefault();
-                navigate(buildRepositoryRunsPath(repositorySlug));
-              }}
-            >
-              Open runs history
-            </a>
-          ) : null}
-        </header>
+      <section className="plainTableSection">
         {commitsPage?.items.length ? (
           <>
-            <div className="tableScroller">
+            <div className="tableScroller tableScrollerBare">
               <table className="dataTable">
                 <thead>
                   <tr>
                     <th>Commit</th>
-                    <th>Status</th>
                     <th>Coverage</th>
+                    <th>Status</th>
                     <th>Attempts</th>
-                    <th>Updated</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -81,32 +52,27 @@ export const CommitsPage = ({
                     >
                       <td>
                         <div className="cellStack">
-                          <strong>
-                            {commit.commitTitle ?? `Commit ${commit.commitSha.slice(0, 7)}`}
-                          </strong>
-                          <span className="secondaryText monoText">
-                            {commit.commitSha.slice(0, 7)}
+                          <strong>{commit.commitTitle ?? shortSha(commit.commitSha)}</strong>
+                          <div className="commitMetaLine secondaryText">
+                            <span>{commit.commitAuthorName ?? "Unknown author"}</span>
+                            <span>
+                              {formatRelativeTime(commit.committedAt ?? commit.latestCreatedAt)}
+                            </span>
+                            <span className="monoText">{shortSha(commit.commitSha)}</span>
+                            <CopyButton value={commit.commitSha} label="Copy" />
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="coverageCell">
+                          <strong>{commit.coveragePercent}%</strong>
+                          <span className="secondaryText">
+                            {commit.coveredProcessCount} / {commit.expectedProcessCount} processes
                           </span>
                         </div>
                       </td>
                       <td>
                         <StatusPill status={commit.status} />
-                      </td>
-                      <td>
-                        <div className="coverageCell">
-                          <div className="coverageMeta">
-                            <strong>{commit.coveragePercent}%</strong>
-                            <span className="secondaryText">
-                              {commit.coveredProcessCount} / {commit.expectedProcessCount} processes
-                            </span>
-                          </div>
-                          <div className="coverageBar" aria-hidden="true">
-                            <div
-                              className="coverageFill"
-                              style={{ width: `${clampPercent(commit.coveragePercent)}%` }}
-                            />
-                          </div>
-                        </div>
                       </td>
                       <td>
                         <div className="cellStack">
@@ -115,11 +81,6 @@ export const CommitsPage = ({
                             {commit.healthyProcessCount} healthy selected
                           </span>
                         </div>
-                      </td>
-                      <td>
-                        <span className="secondaryText">
-                          {formatRelativeTime(commit.latestCreatedAt)}
-                        </span>
                       </td>
                     </tr>
                   ))}

@@ -27,14 +27,6 @@ export default defineVergeConfig({
         kind: "namedProcesses",
         processes: [
           {
-            key: "resume::fixtures/resume/flow.resume.test.ts::resume fixture > fails once and then passes on resume",
-            displayName: "resume fixture > fails once and then passes on resume",
-            kind: "test",
-            areaKeys: ["resume"],
-            filePath: "fixtures/resume/flow.resume.test.ts",
-            extraArgs: [],
-          },
-          {
             key: "resume::fixtures/resume/flow.resume.test.ts::resume fixture > passes after the fail-once process",
             displayName: "resume fixture > passes after the fail-once process",
             kind: "test",
@@ -53,6 +45,14 @@ export default defineVergeConfig({
           {
             key: "resume::fixtures/resume/flow.resume.test.ts::resume fixture > passes the second baseline process",
             displayName: "resume fixture > passes the second baseline process",
+            kind: "test",
+            areaKeys: ["resume"],
+            filePath: "fixtures/resume/flow.resume.test.ts",
+            extraArgs: [],
+          },
+          {
+            key: "resume::fixtures/resume/flow.resume.test.ts::resume fixture > fails once and then passes on resume",
+            displayName: "resume fixture > fails once and then passes on resume",
             kind: "test",
             areaKeys: ["resume"],
             filePath: "fixtures/resume/flow.resume.test.ts",

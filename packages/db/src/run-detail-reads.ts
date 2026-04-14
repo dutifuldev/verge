@@ -174,8 +174,8 @@ export const listRepositoryRuns = async (
   };
 };
 
-const fallbackCommitTitle = (commitTitle: string | null, commitSha: string): string =>
-  commitTitle && commitTitle.trim().length > 0 ? commitTitle : `Commit ${commitSha.slice(0, 7)}`;
+const fallbackCommitTitle = (commitTitle: string | null): string | null =>
+  commitTitle && commitTitle.trim().length > 0 ? commitTitle : null;
 
 export const listRepositoryCommits = async (
   db: Kysely<VergeDatabase>,
@@ -276,7 +276,9 @@ export const listRepositoryCommits = async (
     items.push({
       repositorySlug,
       commitSha,
-      commitTitle: fallbackCommitTitle(latestRun.commitTitle, commitSha),
+      commitTitle: fallbackCommitTitle(latestRun.commitTitle),
+      commitAuthorName: null,
+      committedAt: null,
       status: (statuses.length > 0
         ? summarizeStatuses(statuses)
         : latestRun.status) as CommitListItem["status"],
@@ -411,6 +413,19 @@ export const getCommitDetail = async (
     .where("runs.commit_sha", "=", commitSha)
     .execute();
 
+  const expectedProcessCountRow = await db
+    .selectFrom("process_runs")
+    .innerJoin("step_runs", "step_runs.id", "process_runs.step_run_id")
+    .innerJoin("runs", "runs.id", "step_runs.run_id")
+    .select(
+      sql<number>`count(distinct step_runs.step_key || ':' || process_runs.process_key)`.as(
+        "expectedProcessCount",
+      ),
+    )
+    .where("runs.repository_id", "=", repository.id)
+    .where("runs.commit_sha", "=", commitSha)
+    .executeTakeFirst();
+
   const processes = commitProcessRows.map((row) => ({
     stepKey: row.stepKey,
     stepDisplayName: row.stepDisplayName,
@@ -485,13 +500,28 @@ export const getCommitDetail = async (
     }))
     .sort((left, right) => left.stepKey.localeCompare(right.stepKey));
 
+  const coveredProcessCount = processes.length;
+  const expectedProcessCount = Number(expectedProcessCountRow?.expectedProcessCount ?? 0);
+  const healthyProcessCount = processes.filter((process) =>
+    ["passed", "reused", "skipped"].includes(process.status),
+  ).length;
+
   return {
     repositorySlug: repository.slug,
     commitSha,
-    commitTitle: fallbackCommitTitle(runs[0]?.commitTitle ?? null, commitSha),
+    commitTitle: fallbackCommitTitle(runs[0]?.commitTitle ?? null),
+    commitAuthorName: null,
+    committedAt: null,
     status: (processes.length > 0
       ? summarizeStatuses(processes.map((process) => process.status))
       : summarizeStatuses(runs.map((run) => run.status))) as CommitDetail["status"],
+    coveragePercent:
+      expectedProcessCount === 0
+        ? 0
+        : Math.round((coveredProcessCount / expectedProcessCount) * 100),
+    coveredProcessCount,
+    expectedProcessCount,
+    healthyProcessCount,
     steps,
     processes,
     runs,

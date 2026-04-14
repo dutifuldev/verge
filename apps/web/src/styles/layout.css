@@ -104,6 +104,19 @@
   background: #30363d;
 }
 
+.copyButton {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.copyButton:hover {
+  text-decoration: underline;
+}
+
 .keyValueList,
 .stackList,
 .specGrid {

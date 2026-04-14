@@ -32,3 +32,17 @@ export const EmptyState = ({ title, body }: { title: string; body: string }) => 
     <p>{body}</p>
   </div>
 );
+
+export const CopyButton = ({ value, label = "Copy" }: { value: string; label?: string }) => (
+  <button
+    className="copyButton"
+    type="button"
+    onClick={(event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void navigator.clipboard.writeText(value);
+    }}
+  >
+    {label}
+  </button>
+);

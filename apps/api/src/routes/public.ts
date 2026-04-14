@@ -23,6 +23,7 @@ import {
 
 import type { ApiContext } from "../context.js";
 import { createPlannedRun } from "../planning.js";
+import { resolveCommitMetadataMap } from "../utils.js";
 
 export const registerPublicRoutes = (app: FastifyInstance, context: ApiContext): void => {
   app.get("/healthz", async () => ({ ok: true }));
@@ -107,21 +108,63 @@ export const registerPublicRoutes = (app: FastifyInstance, context: ApiContext):
     ),
   );
 
-  app.get("/repositories/:repo/commits", async (request) =>
-    listRepositoryCommits(
+  app.get("/repositories/:repo/commits", async (request, reply) => {
+    const repo = (request.params as { repo: string }).repo;
+    const repository = await getRepositoryBySlug(context.connection.db, repo);
+    if (!repository) {
+      return reply.code(404).send({ message: "Repository not found" });
+    }
+
+    const commitsPage = await listRepositoryCommits(
       context.connection.db,
-      (request.params as { repo: string }).repo,
+      repo,
       commitListQuerySchema.parse(request.query),
-    ),
-  );
+    );
+    const metadataByCommit = await resolveCommitMetadataMap(
+      repository.root_path,
+      commitsPage.items.map((item) => ({
+        commitSha: item.commitSha,
+        fallbackTitle: item.commitTitle,
+      })),
+    );
+
+    return {
+      ...commitsPage,
+      items: commitsPage.items.map((item) => {
+        const metadata = metadataByCommit.get(item.commitSha);
+        return {
+          ...item,
+          commitTitle: metadata?.commitTitle ?? item.commitTitle,
+          commitAuthorName: metadata?.commitAuthorName ?? null,
+          committedAt: metadata?.committedAt ?? null,
+        };
+      }),
+    };
+  });
 
   app.get("/repositories/:repo/commits/:sha", async (request, reply) => {
     const { repo, sha } = request.params as { repo: string; sha: string };
+    const repository = await getRepositoryBySlug(context.connection.db, repo);
+    if (!repository) {
+      return reply.code(404).send({ message: "Repository not found" });
+    }
     const detail = await getCommitDetail(context.connection.db, repo, sha);
     if (!detail) {
       return reply.code(404).send({ message: "Commit not found" });
     }
-    return detail;
+    const metadataByCommit = await resolveCommitMetadataMap(repository.root_path, [
+      {
+        commitSha: detail.commitSha,
+        fallbackTitle: detail.commitTitle,
+      },
+    ]);
+    const metadata = metadataByCommit.get(detail.commitSha);
+    return {
+      ...detail,
+      commitTitle: metadata?.commitTitle ?? detail.commitTitle,
+      commitAuthorName: metadata?.commitAuthorName ?? null,
+      committedAt: metadata?.committedAt ?? null,
+    };
   });
 
   app.get("/repositories/:repo/commits/:sha/treemap", async (request, reply) => {
