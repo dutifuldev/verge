@@ -63,32 +63,6 @@ export const CommitDetailPage = ({
         </div>
       </section>
 
-      <section className="summaryGrid">
-        <div className="summaryCard">
-          <span className="summaryLabel">Commit</span>
-          <strong className="monoText">{shortSha(commit.commitSha)}</strong>
-          <span className="summaryMeta breakText">{commit.commitTitle ?? commit.commitSha}</span>
-        </div>
-        <div className="summaryCard">
-          <span className="summaryLabel">Selected process time</span>
-          <strong>{formatDurationMs(commit.executionCost.selectedProcessDurationMs)}</strong>
-          <span className="summaryMeta">Used for the converged duration map</span>
-        </div>
-        <div className="summaryCard">
-          <span className="summaryLabel">Execution cost</span>
-          <strong>{formatDurationMs(commit.executionCost.totalExecutionDurationMs)}</strong>
-          <span className="summaryMeta">
-            {commit.executionCost.processRunCount} process runs across{" "}
-            {commit.executionCost.runCount} attempts
-          </span>
-        </div>
-        <div className="summaryCard">
-          <span className="summaryLabel">Current health</span>
-          <strong>{commit.status}</strong>
-          <span className="summaryMeta">Selected from the latest evidence per process</span>
-        </div>
-      </section>
-
       <section className="panel">
         <header className="panelHeader">
           <div>
