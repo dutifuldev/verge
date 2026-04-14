@@ -162,7 +162,7 @@ export const RunsPage = ({
                           <span className="secondaryText">{formatRelativeTime(run.createdAt)}</span>
                         </div>
                       </td>
-                      <td>{formatDuration(run.startedAt, run.finishedAt)}</td>
+                      <td>{formatDuration(run.startedAt, run.finishedAt, run.durationMs)}</td>
                     </tr>
                   ))}
                 </tbody>

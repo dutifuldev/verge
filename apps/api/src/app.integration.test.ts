@@ -96,6 +96,123 @@ describe.runIf(runIntegration)("api integration", () => {
     });
     expect(stepResponse.statusCode).toBe(404);
     expect(stepResponse.json()).toMatchObject({ message: "Step not found" });
+
+    const treemapResponse = await app.inject({
+      method: "GET",
+      url: "/runs/00000000-0000-0000-0000-000000000001/treemap",
+    });
+    expect(treemapResponse.statusCode).toBe(404);
+    expect(treemapResponse.json()).toMatchObject({ message: "Run not found" });
+  }, 30_000);
+
+  it("returns a run treemap with step, file, and process nodes", async () => {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/runs/manual",
+      payload: {
+        repositorySlug: "verge",
+        commitSha: "treemap-sha",
+        requestedStepKeys: ["test"],
+        disableReuse: true,
+      },
+    });
+
+    expect(createResponse.statusCode).toBe(200);
+    const createPayload = createResponse.json() as {
+      runId: string;
+      stepRunIds: string[];
+    };
+
+    const initialTreemapResponse = await app.inject({
+      method: "GET",
+      url: `/runs/${createPayload.runId}/treemap`,
+    });
+    expect(initialTreemapResponse.statusCode).toBe(200);
+    const initialTreemap = initialTreemapResponse.json() as {
+      runId: string;
+      tree: {
+        kind: string;
+        children?: Array<{
+          kind: string;
+          stepKey?: string | null;
+          children?: Array<{ kind: string; children?: Array<{ kind: string }> }>;
+        }>;
+      };
+    };
+
+    expect(initialTreemap.runId).toBe(createPayload.runId);
+    expect(initialTreemap.tree.kind).toBe("run");
+    const testStepNode = initialTreemap.tree.children?.find((node) => node.stepKey === "test");
+    expect(testStepNode?.kind).toBe("step");
+    expect(testStepNode?.children?.some((child) => child.kind === "file")).toBe(true);
+    expect(
+      testStepNode?.children?.some(
+        (child) =>
+          child.kind === "file" &&
+          child.children?.some((grandchild) => grandchild.kind === "process"),
+      ),
+    ).toBe(true);
+
+    const claimResponse = await app.inject({
+      method: "POST",
+      url: "/workers/claim",
+      payload: {
+        workerId: "treemap-worker",
+      },
+    });
+    expect(claimResponse.statusCode).toBe(200);
+    const assignment = claimResponse.json() as {
+      assignment: {
+        stepRunId: string;
+        processRunId: string;
+        processKey: string;
+      } | null;
+    };
+    expect(assignment.assignment?.stepRunId).toBe(createPayload.stepRunIds[0]);
+
+    await app.inject({
+      method: "POST",
+      url: `/workers/steps/${assignment.assignment?.stepRunId}/events`,
+      payload: {
+        workerId: "treemap-worker",
+        processRunId: assignment.assignment?.processRunId,
+        kind: "started",
+        message: "Started treemap process",
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    await app.inject({
+      method: "POST",
+      url: `/workers/steps/${assignment.assignment?.stepRunId}/events`,
+      payload: {
+        workerId: "treemap-worker",
+        processRunId: assignment.assignment?.processRunId,
+        kind: "passed",
+        message: "Completed treemap process",
+      },
+    });
+
+    const finalTreemapResponse = await app.inject({
+      method: "GET",
+      url: `/runs/${createPayload.runId}/treemap`,
+    });
+    expect(finalTreemapResponse.statusCode).toBe(200);
+    const finalTreemap = finalTreemapResponse.json() as {
+      tree: {
+        children?: Array<{
+          children?: Array<{ children?: Array<{ processKey?: string | null; valueMs?: number }> }>;
+        }>;
+      };
+    };
+
+    const processNode = finalTreemap.tree.children
+      ?.flatMap((child) => child.children ?? [])
+      .flatMap((child) => child.children ?? [])
+      .find((node) => node.processKey === assignment.assignment?.processKey);
+
+    expect(processNode?.valueMs).toBeGreaterThan(0);
   }, 30_000);
 
   it("ingests GitHub webhooks idempotently and exposes pull request detail", async () => {

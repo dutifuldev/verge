@@ -14,6 +14,7 @@ import type {
 
 import { listProcessRuns } from "./run-reads.js";
 import {
+  durationMsBetween,
   json,
   parseJson,
   summarizeStatuses,
@@ -99,6 +100,7 @@ export const createRun = async (
       status: input.status ?? "queued",
       started_at: null,
       finished_at: null,
+      duration_ms: null,
     })
     .returningAll()
     .executeTakeFirstOrThrow();
@@ -143,6 +145,7 @@ export const createStepRun = async (
         input.status === "passed" || input.status === "failed" || input.status === "reused"
           ? now
           : null,
+      duration_ms: null,
     })
     .returningAll()
     .executeTakeFirstOrThrow();
@@ -162,6 +165,7 @@ export const createProcessRuns = async (
       selectionPayload: unknown;
       status?: string;
       attemptCount?: number;
+      durationMs?: number | null;
     }>;
   },
 ) => {
@@ -184,6 +188,7 @@ export const createProcessRuns = async (
         selection_payload: json(processRun.selectionPayload),
         status: processRun.status ?? "queued",
         attempt_count: processRun.attemptCount ?? 0,
+        duration_ms: processRun.durationMs ?? null,
         created_at: new Date(),
       })),
     )
@@ -212,6 +217,7 @@ export const cloneStepRunForReuse = async (
         selectionPayload: parseJson(process.selection_payload),
         status: "reused",
         attemptCount: process.attempt_count,
+        durationMs: process.duration_ms,
       })),
     });
   }
@@ -293,6 +299,7 @@ export const cloneCompletedProcessesFromCheckpoint = async (
       selectionPayload: parseJson(process.selection_payload),
       status: "reused",
       attemptCount: process.attempt_count,
+      durationMs: process.duration_ms,
     })),
   });
 
@@ -486,6 +493,7 @@ export const refreshRunStatus = async (db: Kysely<VergeDatabase>, runId: string)
   const stepRows = await db
     .selectFrom("step_runs")
     .select(["status", "started_at", "finished_at"])
+    .select("duration_ms")
     .where("run_id", "=", runId)
     .execute();
 
@@ -502,16 +510,22 @@ export const refreshRunStatus = async (db: Kysely<VergeDatabase>, runId: string)
     .map((row) => row.finished_at)
     .filter((value): value is Date => Boolean(value))
     .map((value) => value.getTime());
+  const hasIncompleteRows = stepRows.some((row) =>
+    ["queued", "claimed", "running"].includes(row.status),
+  );
+  const runFinishedAt =
+    !hasIncompleteRows && finishedCandidates.length > 0
+      ? new Date(Math.max(...finishedCandidates))
+      : null;
+  const runStartedAt = startedCandidates.length ? new Date(Math.min(...startedCandidates)) : null;
 
   return db
     .updateTable("runs")
     .set({
       status,
-      started_at: startedCandidates.length ? new Date(Math.min(...startedCandidates)) : null,
-      finished_at:
-        finishedCandidates.length === stepRows.length && finishedCandidates.length > 0
-          ? new Date(Math.max(...finishedCandidates))
-          : null,
+      started_at: runStartedAt,
+      finished_at: runFinishedAt,
+      duration_ms: durationMsBetween(runStartedAt, runFinishedAt),
     })
     .where("id", "=", runId)
     .returningAll()
@@ -533,16 +547,22 @@ export const refreshStepRunStatus = async (db: Kysely<VergeDatabase>, stepRunId:
     .map((process) => process.finished_at)
     .filter((value): value is Date => Boolean(value))
     .map((value) => value.getTime());
+  const hasIncompleteRows = processRows.some((process) =>
+    ["queued", "claimed", "running"].includes(process.status),
+  );
+  const stepFinishedAt =
+    !hasIncompleteRows && finishedCandidates.length > 0
+      ? new Date(Math.max(...finishedCandidates))
+      : null;
+  const stepStartedAt = startedCandidates.length ? new Date(Math.min(...startedCandidates)) : null;
 
   const updated = await db
     .updateTable("step_runs")
     .set({
       status,
-      started_at: startedCandidates.length ? new Date(Math.min(...startedCandidates)) : null,
-      finished_at:
-        finishedCandidates.length === processRows.length && finishedCandidates.length > 0
-          ? new Date(Math.max(...finishedCandidates))
-          : null,
+      started_at: stepStartedAt,
+      finished_at: stepFinishedAt,
+      duration_ms: durationMsBetween(stepStartedAt, stepFinishedAt),
     })
     .where("id", "=", stepRunId)
     .returningAll()
@@ -583,6 +603,7 @@ export const recordRunEvent = async (
         status: "running",
         started_at: new Date(),
         attempt_count: sql`attempt_count + 1`,
+        duration_ms: null,
       })
       .where("id", "=", input.processRunId)
       .execute();
@@ -615,11 +636,16 @@ export const recordRunEvent = async (
   }
 
   if (input.kind === "passed" || input.kind === "failed" || input.kind === "interrupted") {
+    const finishedAt = new Date();
     await db
       .updateTable("process_runs")
       .set({
         status: input.kind === "passed" ? "passed" : input.kind,
-        finished_at: new Date(),
+        finished_at: finishedAt,
+        duration_ms: sql`greatest(
+          0,
+          extract(epoch from ${finishedAt} - coalesce(started_at, ${finishedAt})) * 1000
+        )::integer`,
       })
       .where("id", "=", input.processRunId)
       .execute();

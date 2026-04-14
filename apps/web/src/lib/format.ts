@@ -23,14 +23,12 @@ export const formatRelativeTime = (value: string): string => {
   return `${diffDays}d ago`;
 };
 
-export const formatDuration = (startedAt: string | null, finishedAt: string | null): string => {
-  if (!startedAt) {
+export const formatDurationMs = (durationMs: number | null): string => {
+  if (durationMs === null) {
     return "Pending";
   }
 
-  const start = new Date(startedAt).getTime();
-  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now();
-  const diffSeconds = Math.max(0, Math.round((end - start) / 1000));
+  const diffSeconds = Math.max(0, Math.round(durationMs / 1000));
 
   if (diffSeconds < 60) {
     return `${diffSeconds}s`;
@@ -45,6 +43,24 @@ export const formatDuration = (startedAt: string | null, finishedAt: string | nu
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   return `${hours}h ${remainingMinutes}m`;
+};
+
+export const formatDuration = (
+  startedAt: string | null,
+  finishedAt: string | null,
+  durationMs?: number | null,
+): string => {
+  if (durationMs !== undefined) {
+    return formatDurationMs(durationMs);
+  }
+
+  if (!startedAt) {
+    return "Pending";
+  }
+
+  const start = new Date(startedAt).getTime();
+  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now();
+  return formatDurationMs(Math.max(0, end - start));
 };
 
 const normalizeLabel = (value: string): string => value.trim().toLowerCase();

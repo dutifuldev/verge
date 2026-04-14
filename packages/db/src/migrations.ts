@@ -397,6 +397,14 @@ export const schemaMigrations: SchemaMigration[] = [
       create index if not exists idx_checkpoints_step_fingerprint on checkpoints(step_key, fingerprint, created_at desc);
     `,
   },
+  {
+    id: "003_duration_columns",
+    sql: `
+      alter table runs add column if not exists duration_ms integer;
+      alter table step_runs add column if not exists duration_ms integer;
+      alter table process_runs add column if not exists duration_ms integer;
+    `,
+  },
 ];
 
 export const runMigrations = async (db: Kysely<any>): Promise<void> => {

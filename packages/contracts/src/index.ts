@@ -251,6 +251,7 @@ export const processRunSummarySchema = z.object({
   attemptCount: z.number().int().nonnegative(),
   startedAt: z.string().datetime().nullable(),
   finishedAt: z.string().datetime().nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
 });
 
 export const stepRunSummarySchema = z.object({
@@ -266,6 +267,7 @@ export const stepRunSummarySchema = z.object({
   createdAt: z.string().datetime(),
   startedAt: z.string().datetime().nullable(),
   finishedAt: z.string().datetime().nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
   processCount: z.number().int().nonnegative(),
 });
 
@@ -289,6 +291,7 @@ export const runSummarySchema = z.object({
   createdAt: z.string().datetime(),
   startedAt: z.string().datetime().nullable(),
   finishedAt: z.string().datetime().nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
   steps: z.array(stepRunSummarySchema),
 });
 
@@ -356,6 +359,42 @@ export const runDetailSchema = runSummarySchema.extend({
   steps: z.array(stepRunSummarySchema),
 });
 
+export const treemapNodeKindSchema = z.enum(["run", "step", "file", "process"]);
+
+export const treemapNodeStatusSchema = z.enum([
+  "planned",
+  "queued",
+  "running",
+  "passed",
+  "failed",
+  "reused",
+  "interrupted",
+  "skipped",
+]);
+
+export const treemapNodeSchema: z.ZodType<any> = z.lazy(() =>
+  z.object({
+    id: z.string().min(1),
+    kind: treemapNodeKindSchema,
+    label: z.string().min(1),
+    valueMs: z.number().int().nonnegative(),
+    wallDurationMs: z.number().int().nonnegative().nullable(),
+    status: treemapNodeStatusSchema,
+    filePath: z.string().nullable(),
+    stepKey: z.string().nullable(),
+    processKey: z.string().nullable(),
+    reused: z.boolean(),
+    attemptCount: z.number().int().nonnegative().nullable(),
+    children: z.array(treemapNodeSchema).optional(),
+  }),
+);
+
+export const runTreemapSchema = z.object({
+  runId: z.string().uuid(),
+  repositorySlug: z.string(),
+  tree: treemapNodeSchema,
+});
+
 export const repoAreaStateSchema = z.object({
   key: z.string(),
   displayName: z.string(),
@@ -388,6 +427,7 @@ export const pullRequestDetailSchema = z.object({
 export type RunStatus = z.infer<typeof runStatusSchema>;
 export type StepRunStatus = z.infer<typeof stepRunStatusSchema>;
 export type ProcessRunStatus = z.infer<typeof processRunStatusSchema>;
+export type TreemapNode = z.infer<typeof treemapNodeSchema>;
 export type ObservationStatus = z.infer<typeof observationStatusSchema>;
 export type FreshnessBucket = z.infer<typeof freshnessBucketSchema>;
 export type RunTrigger = z.infer<typeof runTriggerSchema>;
@@ -415,3 +455,4 @@ export type StepSpecSummary = z.infer<typeof stepSpecSummarySchema>;
 export type RepositoryHealth = z.infer<typeof repositoryHealthSchema>;
 export type CommitDetail = z.infer<typeof commitDetailSchema>;
 export type PullRequestDetail = z.infer<typeof pullRequestDetailSchema>;
+export type RunTreemap = z.infer<typeof runTreemapSchema>;

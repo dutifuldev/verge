@@ -1,24 +1,27 @@
 import { useEffect, useState } from "react";
 
-import type { RunDetail, StepRunDetail } from "@verge/contracts";
+import type { RunDetail, RunTreemap, StepRunDetail } from "@verge/contracts";
 
 import { describeLoadError, fetchJson } from "../lib/api.js";
 import type { AppRoute } from "../lib/routing.js";
 
 export const useRunDetailData = (route: AppRoute) => {
   const [run, setRun] = useState<RunDetail | null>(null);
+  const [treemap, setTreemap] = useState<RunTreemap | null>(null);
   const [step, setStep] = useState<StepRunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (route.name !== "run" && route.name !== "step") {
       setRun(null);
+      setTreemap(null);
       setStep(null);
       setError(null);
       return;
     }
 
     setRun(null);
+    setTreemap(null);
     setStep(null);
 
     const refresh = async (): Promise<void> => {
@@ -30,6 +33,9 @@ export const useRunDetailData = (route: AppRoute) => {
             `/runs/${route.runId}/steps/${route.stepId}`,
           );
           setStep(nextStep);
+        } else {
+          const nextTreemap = await fetchJson<RunTreemap>(`/runs/${route.runId}/treemap`);
+          setTreemap(nextTreemap);
         }
         setError(null);
       } catch (nextError) {
@@ -44,5 +50,5 @@ export const useRunDetailData = (route: AppRoute) => {
     return () => window.clearInterval(interval);
   }, [route]);
 
-  return { run, step, error };
+  return { run, treemap, step, error };
 };

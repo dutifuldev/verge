@@ -21,11 +21,42 @@ export const StepDetailPage = ({
   error: string | null;
 }) => {
   const [processQuery, setProcessQuery] = useState("");
+  const [locationHash, setLocationHash] = useState(() => window.location.hash);
   const deferredProcessQuery = useDeferredValue(processQuery);
 
   useEffect(() => {
     setProcessQuery("");
   }, [step?.id]);
+
+  useEffect(() => {
+    const syncHash = () => setLocationHash(window.location.hash);
+    window.addEventListener("hashchange", syncHash);
+    syncHash();
+
+    return () => {
+      window.removeEventListener("hashchange", syncHash);
+    };
+  }, []);
+
+  const highlightedProcessId = locationHash.startsWith("#process-")
+    ? locationHash.slice("#process-".length)
+    : null;
+
+  useEffect(() => {
+    if (!highlightedProcessId) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .getElementById(`process-${highlightedProcessId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [highlightedProcessId, step?.id]);
 
   if (!run || !step) {
     return (
@@ -137,7 +168,13 @@ export const StepDetailPage = ({
             </thead>
             <tbody>
               {visibleProcesses.map((process) => (
-                <tr key={process.id}>
+                <tr
+                  key={process.id}
+                  id={`process-${process.id}`}
+                  className={
+                    process.id === highlightedProcessId ? "processRowHighlighted" : undefined
+                  }
+                >
                   <td>
                     <strong>{process.processDisplayName}</strong>
                   </td>
@@ -149,7 +186,9 @@ export const StepDetailPage = ({
                   <td>{process.attemptCount}</td>
                   <td>{formatDateTime(process.startedAt)}</td>
                   <td>{formatDateTime(process.finishedAt)}</td>
-                  <td>{formatDuration(process.startedAt, process.finishedAt)}</td>
+                  <td>
+                    {formatDuration(process.startedAt, process.finishedAt, process.durationMs)}
+                  </td>
                 </tr>
               ))}
             </tbody>
