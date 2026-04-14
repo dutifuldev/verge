@@ -128,6 +128,26 @@ type ProcessRunsTable = {
   duration_ms: number | null;
 };
 
+type CommitProcessStateTable = {
+  repository_id: string;
+  commit_sha: string;
+  step_key: string;
+  step_display_name: string;
+  step_kind: string;
+  process_key: string;
+  process_display_name: string;
+  process_kind: string;
+  file_path: string | null;
+  selected_run_id: string;
+  selected_step_run_id: string;
+  selected_process_run_id: string;
+  status: string;
+  duration_ms: number | null;
+  reused: boolean;
+  attempt_count: number;
+  updated_at: Generated<Date>;
+};
+
 type RunEventsTable = {
   id: string;
   step_run_id: string;
@@ -193,6 +213,7 @@ export type VergeDatabase = {
   runs: RunsTable;
   step_runs: StepRunsTable;
   process_runs: ProcessRunsTable;
+  commit_process_state: CommitProcessStateTable;
   run_events: RunEventsTable;
   observations: ObservationsTable;
   artifacts: ArtifactsTable;
@@ -214,6 +235,7 @@ export type EventIngestionRow = Selectable<EventIngestionsTable>;
 export type RunRow = Selectable<RunsTable>;
 export type StepRunRow = Selectable<StepRunsTable>;
 export type ProcessRunRow = Selectable<ProcessRunsTable>;
+export type CommitProcessStateRow = Selectable<CommitProcessStateTable>;
 export type ObservationRow = Selectable<ObservationsTable>;
 export type ArtifactRow = Selectable<ArtifactsTable>;
 export type CheckpointRow = Selectable<CheckpointsTable>;

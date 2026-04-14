@@ -27,7 +27,7 @@ export const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T>
 
 export const describeLoadError = (
   route: {
-    name: "overview" | "runs" | "run" | "step";
+    name: "overview" | "runs" | "run" | "step" | "commit";
   },
   error: unknown,
   fallback: string,
@@ -40,6 +40,9 @@ export const describeLoadError = (
       }
       if (route.name === "step") {
         return "Step not found. Old local data may have been deleted.";
+      }
+      if (route.name === "commit") {
+        return "Commit not found. Old local data may have been deleted.";
       }
       return error.message;
     }

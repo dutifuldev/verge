@@ -9,7 +9,7 @@ import {
   formatDuration,
   shortSha,
 } from "../lib/format.js";
-import { buildRunPath, navigate } from "../lib/routing.js";
+import { buildCommitPath, buildRunPath, navigate } from "../lib/routing.js";
 
 export const StepDetailPage = ({
   run,
@@ -122,7 +122,16 @@ export const StepDetailPage = ({
           </div>
           <div>
             <span className="infoLabel">Commit</span>
-            <div className="monoText">{shortSha(run.commitSha)}</div>
+            <a
+              className="tableLink monoText"
+              href={buildCommitPath(run.repositorySlug, run.commitSha)}
+              onClick={(event) => {
+                event.preventDefault();
+                navigate(buildCommitPath(run.repositorySlug, run.commitSha));
+              }}
+            >
+              {shortSha(run.commitSha)}
+            </a>
           </div>
           <div>
             <span className="infoLabel">Trigger</span>

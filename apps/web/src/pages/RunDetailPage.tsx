@@ -1,7 +1,7 @@
 import type { RunDetail, RunTreemap } from "@verge/contracts";
 
 import { EmptyState, StatusPill } from "../components/common.js";
-import { RunTreemapView } from "../components/RunTreemap.js";
+import { TreemapView } from "../components/RunTreemap.js";
 import {
   classifyStepExecutionMode,
   formatDateTime,
@@ -9,7 +9,7 @@ import {
   shortSha,
   summarizeRunExecutionMode,
 } from "../lib/format.js";
-import { buildStepPath, navigate } from "../lib/routing.js";
+import { buildCommitPath, buildStepPath, navigate } from "../lib/routing.js";
 
 export const RunDetailPage = ({
   run,
@@ -56,7 +56,16 @@ export const RunDetailPage = ({
         </div>
         <div className="summaryCard">
           <span className="summaryLabel">Commit</span>
-          <strong className="monoText">{shortSha(run.commitSha)}</strong>
+          <a
+            className="tableLink monoText"
+            href={buildCommitPath(run.repositorySlug, run.commitSha)}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(buildCommitPath(run.repositorySlug, run.commitSha));
+            }}
+          >
+            {shortSha(run.commitSha)}
+          </a>
           <span className="summaryMeta">{run.branch ?? "No branch"}</span>
         </div>
         <div className="summaryCard">
@@ -87,11 +96,34 @@ export const RunDetailPage = ({
             </p>
           </div>
         </header>
-        <RunTreemapView
-          runId={run.id}
-          repositorySlug={run.repositorySlug}
-          treemapData={treemap}
+        <TreemapView
+          treeData={treemap}
           treemapError={treemapError}
+          errorTitle="Duration map unavailable"
+          loadingTitle="Loading duration map"
+          loadingBody="Fetching the run treemap and process duration breakdown."
+          emptyTitle="No duration map yet"
+          emptyBody="The treemap appears once this run has observed process duration."
+          ariaLabel="Run duration treemap"
+          buildNodePath={(node) => {
+            if (node.kind === "step" && node.sourceStepRunId) {
+              return buildStepPath(run.repositorySlug, run.id, node.sourceStepRunId);
+            }
+
+            if (node.kind === "process" && node.sourceStepRunId && node.sourceProcessRunId) {
+              return `${buildStepPath(
+                run.repositorySlug,
+                run.id,
+                node.sourceStepRunId,
+              )}#process-${node.sourceProcessRunId}`;
+            }
+
+            if (node.kind === "file" && node.sourceStepRunId) {
+              return buildStepPath(run.repositorySlug, run.id, node.sourceStepRunId);
+            }
+
+            return null;
+          }}
         />
       </section>
 

@@ -10,6 +10,7 @@ import type {
   RecordObservationInput,
 } from "@verge/contracts";
 
+import { syncCommitProcessStateForStepRun } from "./commit-projection.js";
 import { json, syncRepoAreaState, type VergeDatabase } from "./shared.js";
 import { refreshStepRunStatus } from "./worker-execution-writes.js";
 
@@ -71,6 +72,8 @@ export const recordRunEvent = async (
         .where("id", "=", row.run_id)
         .execute();
     }
+
+    await syncCommitProcessStateForStepRun(db, stepRunId);
   }
 
   if (input.kind === "passed" || input.kind === "failed" || input.kind === "interrupted") {
@@ -177,6 +180,7 @@ export const resetDatabase = async (db: Kysely<VergeDatabase>): Promise<void> =>
     "artifacts",
     "observations",
     "run_events",
+    "commit_process_state",
     "process_runs",
     "step_runs",
     "runs",

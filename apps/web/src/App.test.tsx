@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDuration, statusTone } from "./lib/format.js";
+import { formatDuration, formatDurationMs, statusTone } from "./lib/format.js";
 
 describe("statusTone", () => {
   it("maps successful states to the good tone", () => {
@@ -22,5 +22,11 @@ describe("formatDuration", () => {
 
   it("prefers the stored duration when it exists", () => {
     expect(formatDuration(null, null, 65_000)).toBe("1m 5s");
+  });
+});
+
+describe("formatDurationMs", () => {
+  it("shows sub-second durations in milliseconds", () => {
+    expect(formatDurationMs(136)).toBe("136ms");
   });
 });

@@ -405,6 +405,36 @@ export const schemaMigrations: SchemaMigration[] = [
       alter table process_runs add column if not exists duration_ms integer;
     `,
   },
+  {
+    id: "004_commit_process_state",
+    sql: `
+      create table if not exists commit_process_state (
+        repository_id uuid not null references repositories(id) on delete cascade,
+        commit_sha text not null,
+        step_key text not null,
+        step_display_name text not null,
+        step_kind text not null,
+        process_key text not null,
+        process_display_name text not null,
+        process_kind text not null,
+        file_path text,
+        selected_run_id uuid not null references runs(id) on delete cascade,
+        selected_step_run_id uuid not null references step_runs(id) on delete cascade,
+        selected_process_run_id uuid not null references process_runs(id) on delete cascade,
+        status text not null,
+        duration_ms integer,
+        reused boolean not null default false,
+        attempt_count integer not null default 0,
+        updated_at timestamptz not null default now(),
+        primary key (repository_id, commit_sha, step_key, process_key)
+      );
+
+      create index if not exists idx_commit_process_state_repository_commit
+        on commit_process_state(repository_id, commit_sha, step_key);
+      create index if not exists idx_commit_process_state_selected_run
+        on commit_process_state(selected_run_id, selected_step_run_id, selected_process_run_id);
+    `,
+  },
 ];
 
 export const runMigrations = async (db: Kysely<any>): Promise<void> => {

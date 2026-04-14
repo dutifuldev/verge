@@ -2,6 +2,7 @@ import type { Kysely } from "kysely";
 
 import type { ClaimedProcessRun } from "@verge/contracts";
 
+import { syncCommitProcessStateForStepRun } from "./commit-projection.js";
 import { listProcessRuns } from "./process-run-reads.js";
 import { durationMsBetween, parseJson, summarizeStatuses, type VergeDatabase } from "./shared.js";
 
@@ -86,6 +87,7 @@ export const refreshStepRunStatus = async (db: Kysely<VergeDatabase>, stepRunId:
 
   if (updated) {
     await refreshRunStatus(db, updated.run_id);
+    await syncCommitProcessStateForStepRun(db, stepRunId);
   }
 
   return updated;

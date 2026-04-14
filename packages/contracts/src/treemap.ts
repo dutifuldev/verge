@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const treemapNodeKindSchema = z.enum(["run", "step", "file", "process"]);
+export const treemapNodeKindSchema = z.enum(["run", "commit", "step", "file", "process"]);
 
 export const treemapNodeStatusSchema = z.enum([
   "planned",
@@ -24,6 +24,9 @@ export const treemapNodeSchema: z.ZodType<any> = z.lazy(() =>
     filePath: z.string().nullable(),
     stepKey: z.string().nullable(),
     processKey: z.string().nullable(),
+    sourceRunId: z.string().uuid().nullable(),
+    sourceStepRunId: z.string().uuid().nullable(),
+    sourceProcessRunId: z.string().uuid().nullable(),
     reused: z.boolean(),
     attemptCount: z.number().int().nonnegative().nullable(),
     children: z.array(treemapNodeSchema).optional(),
@@ -36,5 +39,12 @@ export const runTreemapSchema = z.object({
   tree: treemapNodeSchema,
 });
 
+export const commitTreemapSchema = z.object({
+  repositorySlug: z.string(),
+  commitSha: z.string(),
+  tree: treemapNodeSchema,
+});
+
 export type TreemapNode = z.infer<typeof treemapNodeSchema>;
 export type RunTreemap = z.infer<typeof runTreemapSchema>;
+export type CommitTreemap = z.infer<typeof commitTreemapSchema>;

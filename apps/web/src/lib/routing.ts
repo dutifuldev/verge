@@ -1,5 +1,6 @@
 export type AppRoute =
   | { name: "overview"; repositorySlug: string | null }
+  | { name: "commit"; repositorySlug: string | null; commitSha: string }
   | {
       name: "runs";
       repositorySlug: string | null;
@@ -46,6 +47,9 @@ export const buildRepositoryRunsPath = (
 export const buildRunPath = (repositorySlug: string, runId: string): string =>
   `/repos/${repositorySlug}/runs/${runId}`;
 
+export const buildCommitPath = (repositorySlug: string, commitSha: string): string =>
+  `/repos/${repositorySlug}/commits/${commitSha}`;
+
 export const buildStepPath = (repositorySlug: string, runId: string, stepId: string): string =>
   `/repos/${repositorySlug}/runs/${runId}/steps/${stepId}`;
 
@@ -63,6 +67,15 @@ export const parseRoute = (): AppRoute => {
       status: search.get("status") ?? "",
       trigger: search.get("trigger") ?? "",
       stepKey: search.get("stepKey") ?? "",
+    };
+  }
+
+  const repoCommitMatch = path.match(/^\/repos\/([^/]+)\/commits\/([^/]+)$/);
+  if (repoCommitMatch) {
+    return {
+      name: "commit",
+      repositorySlug: repoCommitMatch[1] ?? null,
+      commitSha: repoCommitMatch[2]!,
     };
   }
 
