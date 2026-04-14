@@ -57,10 +57,7 @@
   display: block;
   width: 100%;
   height: auto;
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius-lg);
-  background:
-    linear-gradient(180deg, rgba(22, 27, 34, 0.94), rgba(13, 17, 23, 1)), var(--canvas-default);
+  background: transparent;
 }
 
 .treemapNodeRect {

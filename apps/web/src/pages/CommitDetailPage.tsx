@@ -63,47 +63,36 @@ export const CommitDetailPage = ({
         </div>
       </section>
 
-      <section className="panel">
-        <header className="panelHeader">
-          <div>
-            <h2>Commit duration map</h2>
-            <p className="secondaryText">
-              Area shows the selected process duration for this commit. Color shows the converged
-              status of each step and process.
-            </p>
-          </div>
-        </header>
-        <TreemapView
-          treeData={treemap}
-          treemapError={treemapError}
-          errorTitle="Commit duration map unavailable"
-          loadingTitle="Loading commit duration map"
-          loadingBody="Fetching the converged commit treemap and process duration breakdown."
-          emptyTitle="No commit duration map yet"
-          emptyBody="The treemap appears once this commit has selected process duration."
-          ariaLabel="Commit duration treemap"
-          buildNodePath={(node) => {
-            if (
-              node.kind === "process" &&
-              node.sourceRunId &&
-              node.sourceStepRunId &&
-              node.sourceProcessRunId
-            ) {
-              return `${buildStepPath(
-                commit.repositorySlug,
-                node.sourceRunId,
-                node.sourceStepRunId,
-              )}#process-${node.sourceProcessRunId}`;
-            }
+      <TreemapView
+        treeData={treemap}
+        treemapError={treemapError}
+        errorTitle="Commit duration map unavailable"
+        loadingTitle="Loading commit duration map"
+        loadingBody="Fetching the converged commit treemap and process duration breakdown."
+        emptyTitle="No commit duration map yet"
+        emptyBody="The treemap appears once this commit has selected process duration."
+        ariaLabel="Commit duration treemap"
+        buildNodePath={(node) => {
+          if (
+            node.kind === "process" &&
+            node.sourceRunId &&
+            node.sourceStepRunId &&
+            node.sourceProcessRunId
+          ) {
+            return `${buildStepPath(
+              commit.repositorySlug,
+              node.sourceRunId,
+              node.sourceStepRunId,
+            )}#process-${node.sourceProcessRunId}`;
+          }
 
-            if (node.kind === "file" && node.sourceRunId && node.sourceStepRunId) {
-              return buildStepPath(commit.repositorySlug, node.sourceRunId, node.sourceStepRunId);
-            }
+          if (node.kind === "file" && node.sourceRunId && node.sourceStepRunId) {
+            return buildStepPath(commit.repositorySlug, node.sourceRunId, node.sourceStepRunId);
+          }
 
-            return null;
-          }}
-        />
-      </section>
+          return null;
+        }}
+      />
 
       <section className="panel tablePanel">
         <header className="panelHeader">
