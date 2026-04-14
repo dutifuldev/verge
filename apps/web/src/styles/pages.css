@@ -122,13 +122,14 @@
 }
 
 .tableLink {
-  color: var(--accent);
+  color: var(--fg-default);
   font-weight: 600;
   text-decoration: none;
 }
 
 .tableLink:hover,
 .tableLink:focus-visible {
+  color: var(--fg-default);
   text-decoration: underline;
 }
 

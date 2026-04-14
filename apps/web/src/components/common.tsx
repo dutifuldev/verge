@@ -1,3 +1,5 @@
+import { Copy } from "lucide-react";
+
 import { statusTone } from "../lib/format.js";
 import { navigate } from "../lib/routing.js";
 
@@ -37,12 +39,14 @@ export const CopyButton = ({ value, label = "Copy" }: { value: string; label?: s
   <button
     className="copyButton"
     type="button"
+    aria-label={label}
+    title={label}
     onClick={(event) => {
       event.preventDefault();
       event.stopPropagation();
       void navigator.clipboard.writeText(value);
     }}
   >
-    {label}
+    <Copy size={14} strokeWidth={1.9} />
   </button>
 );
