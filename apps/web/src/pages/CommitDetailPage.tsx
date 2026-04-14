@@ -94,12 +94,12 @@ export const CommitDetailPage = ({
         }}
       />
 
-      <section className="panel tablePanel">
-        <header className="panelHeader">
+      <section className="plainTableSection">
+        <header className="plainSectionHeader">
           <h2>Steps</h2>
           <span className="secondaryText">{commit.steps.length} converged step states</span>
         </header>
-        <div className="tableScroller">
+        <div className="tableScroller tableScrollerBare">
           <table className="dataTable">
             <thead>
               <tr>
@@ -157,12 +157,12 @@ export const CommitDetailPage = ({
         </div>
       </section>
 
-      <section className="panel tablePanel">
-        <header className="panelHeader">
+      <section className="plainTableSection">
+        <header className="plainSectionHeader">
           <h2>Processes</h2>
           <span className="secondaryText">{commit.processes.length} converged process states</span>
         </header>
-        <div className="tableScroller">
+        <div className="tableScroller tableScrollerBare">
           <table className="dataTable">
             <thead>
               <tr>
@@ -225,12 +225,12 @@ export const CommitDetailPage = ({
         </div>
       </section>
 
-      <section className="panel tablePanel">
-        <header className="panelHeader">
-          <h2>Attempt history</h2>
+      <details className="plainDisclosure">
+        <summary className="plainDisclosureSummary">
+          <span>Attempt history</span>
           <span className="secondaryText">{commit.runs.length} runs contributed to this view</span>
-        </header>
-        <div className="tableScroller">
+        </summary>
+        <div className="tableScroller tableScrollerBare">
           <table className="dataTable">
             <thead>
               <tr>
@@ -283,7 +283,7 @@ export const CommitDetailPage = ({
             </tbody>
           </table>
         </div>
-      </section>
+      </details>
     </div>
   );
 };

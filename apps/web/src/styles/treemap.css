@@ -3,6 +3,89 @@
   gap: 16px;
 }
 
+.treemapToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.treemapToolbarGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.treemapToolbarLabel {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.segmentedControl {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.treemapSelect {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: rgba(33, 38, 45, 0.72);
+  color: var(--fg-default);
+}
+
+.treemapSelect select {
+  min-width: 112px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.treemapSelect select:focus {
+  outline: none;
+}
+
+.segmentedButton {
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  min-height: 30px;
+  padding: 0 10px;
+  background: rgba(33, 38, 45, 0.72);
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.segmentedButton:hover,
+.segmentedButton:focus-visible {
+  background: rgba(48, 54, 61, 0.92);
+  color: var(--fg-default);
+}
+
+.segmentedButton.active {
+  border-color: rgba(47, 129, 247, 0.4);
+  background: rgba(31, 111, 235, 0.18);
+  color: var(--fg-default);
+}
+
+.treemapResetButton {
+  min-height: 32px;
+  padding: 0 12px;
+}
+
 .treemapLegend {
   display: flex;
   flex-wrap: wrap;
@@ -147,4 +230,16 @@
   gap: 8px 12px;
   align-items: start;
   font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .treemapToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .treemapToolbarGroup {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }

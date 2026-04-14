@@ -239,7 +239,9 @@
 
   .topbar,
   .paginationBar,
-  .panelHeader {
+  .panelHeader,
+  .plainSectionHeader,
+  .plainDisclosureSummary {
     flex-direction: column;
     align-items: stretch;
   }

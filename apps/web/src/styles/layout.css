@@ -223,3 +223,32 @@
   display: grid;
   gap: 16px;
 }
+
+.plainSectionHeader,
+.plainDisclosureSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.plainSectionHeader h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.plainDisclosure {
+  display: grid;
+  gap: 12px;
+}
+
+.plainDisclosureSummary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.plainDisclosureSummary::-webkit-details-marker {
+  display: none;
+}

@@ -72,53 +72,23 @@ From the repo root:
 pnpm install
 ```
 
-## Step 2: Start Postgres
+## Step 2: Start The Local Runtime
 
-The repo includes a local Compose file:
-
-```bash
-pnpm db:up
-pnpm db:migrate
-```
-
-This starts Postgres on:
-
-```text
-postgres://verge:verge@127.0.0.1:54329/verge
-```
-
-## Step 3: Create Local Environment Variables
-
-You can export these in your shell before starting Verge:
+The clean way now is:
 
 ```bash
-export DATABASE_URL=postgres://verge:verge@127.0.0.1:54329/verge
-export GITHUB_WEBHOOK_SECRET='replace-this-with-a-long-random-secret'
-export VERGE_ALLOWED_ORIGINS='http://127.0.0.1:5173,http://localhost:5173'
+pnpm local:up
+pnpm local:seed
 ```
 
-You do not need to expose the API publicly. Keep the defaults so the API stays on localhost.
-
-## Step 4: Start Verge
-
-The easiest way is:
-
-```bash
-pnpm dev
-```
-
-That starts:
-
-- the API
-- the worker
-- the web UI
+That creates the local runtime env, starts the dedicated Verge Postgres, starts the API, worker, and web UI, and seeds fresh data for `verge` and `verge-testbed`.
 
 Expected local URLs:
 
 - API: `http://127.0.0.1:8787`
-- UI: `http://127.0.0.1:5173`
+- UI: `http://127.0.0.1:4173`
 
-## Step 5: Verify Local Operation Before GitHub
+## Step 3: Verify Local Operation Before GitHub
 
 Before you involve GitHub, make sure Verge works locally.
 
@@ -131,25 +101,12 @@ curl http://127.0.0.1:8787/healthz
 Open the UI:
 
 ```text
-http://127.0.0.1:5173
+http://127.0.0.1:4173
 ```
 
-Then create a manual run through the UI or with the API:
+The seeded runs should already be visible in the UI.
 
-```bash
-curl \
-  -X POST http://127.0.0.1:8787/run-requests/manual \
-  -H 'content-type: application/json' \
-  --data '{
-    "repositorySlug": "verge",
-    "commitSha": "local-test-sha",
-    "changedFiles": ["apps/api/src/app.ts"]
-  }'
-```
-
-If the worker is running, you should see runs get created and executed.
-
-## Step 6: Start Ngrok
+## Step 4: Start Ngrok
 
 Point `ngrok` at the local Verge API:
 
@@ -171,7 +128,7 @@ The webhook URL should be:
 https://example-id.ngrok-free.app/webhooks/github
 ```
 
-## Step 7: Configure GitHub Webhook
+## Step 5: Configure GitHub Webhook
 
 In the GitHub repository you want Verge to observe:
 
@@ -188,7 +145,7 @@ For the current MVP, the important events are:
 - `push`
 - `pull_request`
 
-## Step 8: Test Webhook Delivery
+## Step 6: Test Webhook Delivery
 
 Use GitHub's webhook delivery tester or push a small commit.
 

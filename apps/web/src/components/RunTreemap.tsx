@@ -16,6 +16,17 @@ const treemapWidth = 1200;
 const treemapHeight = 520;
 type TreemapLayoutNode = HierarchyRectangularNode<TreemapNode>;
 const horizontalPadding = 10;
+const treemapStatuses = [
+  "all",
+  "passed",
+  "failed",
+  "reused",
+  "running",
+  "queued",
+  "interrupted",
+] as const;
+type TreemapStatusFilter = (typeof treemapStatuses)[number];
+type TreemapMetric = "duration" | "count";
 
 type NodeTextContent = {
   primary: string | null;
@@ -67,10 +78,20 @@ const compactProcessLabel = (value: string): string => {
 const maxCharactersForWidth = (width: number, charWidth: number): number =>
   Math.floor(width / charWidth);
 
-const buildNodeTextContent = (node: TreemapLayoutNode): NodeTextContent => {
+const formatCount = (value: number): string => `${value} ${value === 1 ? "process" : "processes"}`;
+
+const buildNodeTextContent = (
+  node: TreemapLayoutNode,
+  metric: TreemapMetric,
+  metricValue: number,
+): NodeTextContent => {
   const width = node.x1 - node.x0;
   const height = node.y1 - node.y0;
   const textWidth = Math.max(0, width - horizontalPadding * 2);
+  const secondaryMetricLabel =
+    metric === "duration"
+      ? `${formatDurationMs(metricValue)} process time`
+      : formatCount(metricValue);
 
   if (node.data.kind === "step") {
     if (width < 96 || height < 40) {
@@ -81,10 +102,7 @@ const buildNodeTextContent = (node: TreemapLayoutNode): NodeTextContent => {
       primary: ellipsize(node.data.label, maxCharactersForWidth(textWidth, 7.1)),
       secondary:
         width >= 150 && height >= 56
-          ? ellipsize(
-              `${formatDurationMs(node.data.valueMs)} process time`,
-              maxCharactersForWidth(textWidth, 6.2),
-            )
+          ? ellipsize(secondaryMetricLabel, maxCharactersForWidth(textWidth, 6.2))
           : null,
     };
   }
@@ -100,7 +118,10 @@ const buildNodeTextContent = (node: TreemapLayoutNode): NodeTextContent => {
       primary: ellipsize(fileLabel, maxCharactersForWidth(textWidth, 6.9)),
       secondary:
         width >= 136 && height >= 48
-          ? ellipsize(formatDurationMs(node.data.valueMs), maxCharactersForWidth(textWidth, 6.1))
+          ? ellipsize(
+              metric === "duration" ? formatDurationMs(metricValue) : formatCount(metricValue),
+              maxCharactersForWidth(textWidth, 6.1),
+            )
           : null,
     };
   }
@@ -119,14 +140,76 @@ const buildNodeTextContent = (node: TreemapLayoutNode): NodeTextContent => {
     primary,
     secondary:
       primary && width >= 164 && height >= 44
-        ? ellipsize(formatDurationMs(node.data.valueMs), maxCharactersForWidth(textWidth, 6.1))
+        ? metric === "duration"
+          ? ellipsize(formatDurationMs(metricValue), maxCharactersForWidth(textWidth, 6.1))
+          : null
         : null,
   };
 };
 
-const buildTreemapLayout = (tree: TreemapNode): TreemapLayoutNode => {
+const countProcesses = (node: TreemapNode): number => {
+  if (!node.children?.length) {
+    return node.kind === "process" ? 1 : 0;
+  }
+
+  return node.children.reduce(
+    (total: number, child: TreemapNode) => total + countProcesses(child),
+    0,
+  );
+};
+
+const metricValueForNode = (node: TreemapNode, metric: TreemapMetric): number =>
+  metric === "duration" ? node.valueMs : countProcesses(node);
+
+const cloneTreemapNode = (node: TreemapNode): TreemapNode => ({
+  ...node,
+  children: node.children?.map(cloneTreemapNode) ?? [],
+});
+
+const filterNodeByStatus = (node: TreemapNode, status: TreemapStatusFilter): TreemapNode | null => {
+  if (status === "all") {
+    return cloneTreemapNode(node);
+  }
+
+  if (!node.children?.length) {
+    return node.status === status ? { ...node } : null;
+  }
+
+  const filteredChildren = node.children
+    .map((child: TreemapNode) => filterNodeByStatus(child, status))
+    .filter((child: TreemapNode | null): child is TreemapNode => child !== null);
+
+  if (!filteredChildren.length) {
+    return null;
+  }
+
+  return {
+    ...node,
+    children: filteredChildren,
+  };
+};
+
+const focusTreeOnStep = (tree: TreemapNode, stepId: string | null): TreemapNode => {
+  if (!stepId) {
+    return cloneTreemapNode(tree);
+  }
+
+  const focusedStep = tree.children?.find(
+    (child: TreemapNode) => child.id === stepId && child.kind === "step",
+  );
+  if (!focusedStep) {
+    return cloneTreemapNode(tree);
+  }
+
+  return {
+    ...tree,
+    children: [cloneTreemapNode(focusedStep)],
+  };
+};
+
+const buildTreemapLayout = (tree: TreemapNode, metric: TreemapMetric): TreemapLayoutNode => {
   const root = hierarchy(tree)
-    .sum((node: TreemapNode) => node.valueMs)
+    .sum((node: TreemapNode) => metricValueForNode(node, metric))
     .sort(
       (left: HierarchyNode<TreemapNode>, right: HierarchyNode<TreemapNode>) =>
         (right.value ?? 0) - (left.value ?? 0),
@@ -168,7 +251,12 @@ export const TreemapView = ({
     node: TreemapNode;
     x: number;
     y: number;
+    metricValue: number;
+    metric: TreemapMetric;
   } | null>(null);
+  const [statusFilter, setStatusFilter] = useState<TreemapStatusFilter>("all");
+  const [metric, setMetric] = useState<TreemapMetric>("duration");
+  const [focusedStepId, setFocusedStepId] = useState<string | null>(null);
 
   if (!treeData) {
     return (
@@ -183,11 +271,134 @@ export const TreemapView = ({
     return <EmptyState title={emptyTitle} body={emptyBody} />;
   }
 
-  const root = buildTreemapLayout(treeData.tree);
+  const focusedTree = focusTreeOnStep(treeData.tree, focusedStepId);
+  const filteredTree = filterNodeByStatus(focusedTree, statusFilter);
+  const stepOptions =
+    treeData.tree.children?.filter((child: TreemapNode) => child.kind === "step") ?? [];
+
+  if (!filteredTree || !filteredTree.children?.length) {
+    return (
+      <div className="treemapSection">
+        <div className="treemapToolbar">
+          <div className="treemapToolbarGroup">
+            <span className="treemapToolbarLabel">Size</span>
+            <div className="segmentedControl">
+              {(["duration", "count"] as const).map((option) => (
+                <button
+                  key={option}
+                  className={`segmentedButton ${metric === option ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setMetric(option)}
+                >
+                  {option === "duration" ? "Duration" : "Count"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="treemapToolbarGroup">
+            <span className="treemapToolbarLabel">Step</span>
+            <label className="treemapSelect">
+              <select
+                aria-label="Focused step"
+                value={focusedStepId ?? ""}
+                onChange={(event) => setFocusedStepId(event.currentTarget.value || null)}
+              >
+                <option value="">All steps</option>
+                {stepOptions.map((step: TreemapNode) => (
+                  <option key={step.id} value={step.id}>
+                    {step.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="treemapToolbarGroup">
+            <span className="treemapToolbarLabel">Status</span>
+            <div className="segmentedControl">
+              {treemapStatuses.map((option) => (
+                <button
+                  key={option}
+                  className={`segmentedButton ${statusFilter === option ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setStatusFilter(option)}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <EmptyState
+          title="No treemap nodes match this filter"
+          body="Clear the current status filter or change the focused step."
+        />
+      </div>
+    );
+  }
+
+  const root = buildTreemapLayout(filteredTree, metric);
   const renderedNodes = root.descendants().filter((node: TreemapLayoutNode) => node.depth > 0);
 
   return (
     <div className="treemapSection">
+      <div className="treemapToolbar">
+        <div className="treemapToolbarGroup">
+          <span className="treemapToolbarLabel">Size</span>
+          <div className="segmentedControl">
+            {(["duration", "count"] as const).map((option) => (
+              <button
+                key={option}
+                className={`segmentedButton ${metric === option ? "active" : ""}`}
+                type="button"
+                onClick={() => setMetric(option)}
+              >
+                {option === "duration" ? "Duration" : "Count"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="treemapToolbarGroup">
+          <span className="treemapToolbarLabel">Step</span>
+          <label className="treemapSelect">
+            <select
+              aria-label="Focused step"
+              value={focusedStepId ?? ""}
+              onChange={(event) => setFocusedStepId(event.currentTarget.value || null)}
+            >
+              <option value="">All steps</option>
+              {stepOptions.map((step: TreemapNode) => (
+                <option key={step.id} value={step.id}>
+                  {step.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="treemapToolbarGroup">
+          <span className="treemapToolbarLabel">Status</span>
+          <div className="segmentedControl">
+            {treemapStatuses.map((option) => (
+              <button
+                key={option}
+                className={`segmentedButton ${statusFilter === option ? "active" : ""}`}
+                type="button"
+                onClick={() => setStatusFilter(option)}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+        {focusedStepId ? (
+          <button
+            className="secondaryButton treemapResetButton"
+            type="button"
+            onClick={() => setFocusedStepId(null)}
+          >
+            Show full commit
+          </button>
+        ) : null}
+      </div>
       <div className="treemapLegend">
         {["passed", "failed", "reused", "running", "queued", "interrupted"].map((status) => (
           <span className={`treemapLegendItem ${statusTone(status)}`} key={status}>
@@ -207,7 +418,8 @@ export const TreemapView = ({
             const width = node.x1 - node.x0;
             const height = node.y1 - node.y0;
             const targetPath = buildNodePath?.(node.data) ?? null;
-            const text = buildNodeTextContent(node);
+            const metricValue = Math.max(0, Math.round(node.value ?? 0));
+            const text = buildNodeTextContent(node, metric, metricValue);
             const clipPathId = `treemap-clip-${index}`;
 
             return (
@@ -237,6 +449,13 @@ export const TreemapView = ({
                   ry={node.data.kind === "process" ? 4 : 8}
                   width={Math.max(0, width)}
                   onClick={() => {
+                    if (node.data.kind === "step") {
+                      setFocusedStepId((current) =>
+                        current === node.data.id ? null : node.data.id,
+                      );
+                      return;
+                    }
+
                     if (targetPath) {
                       navigate(targetPath);
                     }
@@ -246,6 +465,8 @@ export const TreemapView = ({
                       node: node.data,
                       x: event.clientX,
                       y: event.clientY,
+                      metricValue,
+                      metric,
                     });
                   }}
                   onMouseLeave={() => setHoveredNode(null)}
@@ -298,6 +519,14 @@ export const TreemapView = ({
               <StatusPill status={hoveredNode.node.status} />
             </div>
             <div className="treemapTooltipGrid">
+              <span className="infoLabel">
+                {hoveredNode.metric === "duration" ? "Selected time" : "Selected count"}
+              </span>
+              <span>
+                {hoveredNode.metric === "duration"
+                  ? formatDurationMs(hoveredNode.metricValue)
+                  : formatCount(hoveredNode.metricValue)}
+              </span>
               <span className="infoLabel">Process time</span>
               <span>{formatDurationMs(hoveredNode.node.valueMs)}</span>
               <span className="infoLabel">Wall time</span>

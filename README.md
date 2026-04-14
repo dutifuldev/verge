@@ -112,6 +112,22 @@ This starts:
 - the worker
 - the Vite web app
 
+### Reproducible Local Runtime
+
+For the long-running local instance, use:
+
+```bash
+pnpm local:up
+pnpm local:seed
+pnpm local:status
+```
+
+And when you need a clean reset:
+
+```bash
+pnpm local:reset
+```
+
 ### Useful Commands
 
 ```bash
@@ -190,6 +206,7 @@ Design and planning docs live in `docs/`:
 - [2026-04-13-verge-cli-and-config-architecture.md](./docs/2026-04-13-verge-cli-and-config-architecture.md)
 - [2026-04-13-local-ngrok-setup.md](./docs/2026-04-13-local-ngrok-setup.md)
 - [2026-04-13-single-host-docker-compose-deployment.md](./docs/2026-04-13-single-host-docker-compose-deployment.md)
+- [2026-04-14-local-runtime-workflow.md](./docs/2026-04-14-local-runtime-workflow.md)
 
 ## Current Status
 

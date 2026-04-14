@@ -21,7 +21,13 @@
     "db:down": "docker compose -f infra/local/docker-compose.yml down -v",
     "db:migrate": "pnpm --filter @verge/db migrate",
     "db:reset": "pnpm db:down && pnpm db:up && pnpm db:migrate",
-    "sync": "pnpm exec verge sync"
+    "sync": "pnpm exec verge sync",
+    "local:up": "bash scripts/local-runtime.sh up",
+    "local:reset": "bash scripts/local-runtime.sh reset",
+    "local:down": "bash scripts/local-runtime.sh down",
+    "local:restart": "bash scripts/local-runtime.sh restart",
+    "local:status": "bash scripts/local-runtime.sh status",
+    "local:seed": "bash scripts/local-seed.sh"
   },
   "dependencies": {
     "@verge/cli": "workspace:*"
