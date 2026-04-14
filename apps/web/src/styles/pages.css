@@ -33,6 +33,76 @@
   text-transform: uppercase;
 }
 
+.tableControlsRow th {
+  top: 0;
+  z-index: 2;
+  padding: 0;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.tableControlsBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--canvas-subtle);
+}
+
+.tableControlsLabel {
+  color: var(--fg-default);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tableControlsGroup {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.headerFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+}
+
+.headerFilter span {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.headerFilter select {
+  min-width: 88px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.headerFilter select:focus {
+  outline: none;
+}
+
+.compactButton {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
 .dataTable tbody tr:last-child td {
   border-bottom: 0;
 }
@@ -184,5 +254,19 @@
 
   .topnav {
     flex-wrap: wrap;
+  }
+
+  .tableControlsBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tableControlsGroup {
+    justify-content: stretch;
+  }
+
+  .headerFilter {
+    width: 100%;
+    justify-content: space-between;
   }
 }

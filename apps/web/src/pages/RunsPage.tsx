@@ -15,17 +15,7 @@ export const RunsPage = ({
   repositorySlug,
   runsPage,
   processSpecs,
-  commitSha,
-  branch,
-  changedFiles,
-  resumeFromCheckpoint,
-  submitting,
   draftFilters,
-  onCommitShaChange,
-  onBranchChange,
-  onChangedFilesChange,
-  onResumeFromCheckpointChange,
-  onSubmit,
   onDraftFilterChange,
   onApplyFilters,
   onPageChange,
@@ -33,17 +23,7 @@ export const RunsPage = ({
   repositorySlug: string | null;
   runsPage: PaginatedRunList | null;
   processSpecs: StepSpecSummary[];
-  commitSha: string;
-  branch: string;
-  changedFiles: string;
-  resumeFromCheckpoint: boolean;
-  submitting: boolean;
   draftFilters: { status: string; trigger: string; stepKey: string };
-  onCommitShaChange: (value: string) => void;
-  onBranchChange: (value: string) => void;
-  onChangedFilesChange: (value: string) => void;
-  onResumeFromCheckpointChange: (value: boolean) => void;
-  onSubmit: () => void;
   onDraftFilterChange: (key: "status" | "trigger" | "stepKey", value: string) => void;
   onApplyFilters: () => void;
   onPageChange: (page: number) => void;
@@ -61,118 +41,14 @@ export const RunsPage = ({
         </div>
       </section>
 
-      <section className="panel">
-        <header className="panelHeader">
-          <div>
-            <h2>Create a run</h2>
-            <p className="secondaryText">
-              Manual runs live here so the repository landing page can stay focused on commits.
-            </p>
-          </div>
-        </header>
-        <div className="formGrid">
-          <label className="field">
-            <span>Commit SHA</span>
-            <input
-              value={commitSha}
-              onChange={(event) => onCommitShaChange(event.target.value)}
-              placeholder="Paste the commit SHA to evaluate"
-            />
-          </label>
-          <label className="field">
-            <span>Branch</span>
-            <input
-              value={branch}
-              onChange={(event) => onBranchChange(event.target.value)}
-              placeholder="main"
-            />
-          </label>
-          <label className="field span2">
-            <span>Changed files</span>
-            <textarea
-              value={changedFiles}
-              onChange={(event) => onChangedFilesChange(event.target.value)}
-              placeholder={"apps/web/src/App.tsx\napps/web/src/styles.css"}
-            />
-          </label>
-          <label className="checkboxField span2">
-            <input
-              type="checkbox"
-              checked={resumeFromCheckpoint}
-              onChange={(event) => onResumeFromCheckpointChange(event.target.checked)}
-            />
-            <span>Resume from the latest compatible checkpoint when available.</span>
-          </label>
-        </div>
-        <div className="panelActions">
-          <button
-            className="primaryButton"
-            disabled={submitting || commitSha.trim().length === 0}
-            onClick={() => void onSubmit()}
-          >
-            {submitting ? "Submitting..." : "Start run"}
-          </button>
-        </div>
-      </section>
-
-      <section className="panel">
-        <header className="panelHeader">
-          <h2>Browse runs</h2>
-        </header>
-        <div className="filterGrid">
-          <label className="field">
-            <span>Status</span>
-            <select
-              value={draftFilters.status}
-              onChange={(event) => onDraftFilterChange("status", event.target.value)}
-            >
-              <option value="">All</option>
-              {["passed", "failed", "running", "queued", "reused", "interrupted"].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Trigger</span>
-            <select
-              value={draftFilters.trigger}
-              onChange={(event) => onDraftFilterChange("trigger", event.target.value)}
-            >
-              <option value="">All</option>
-              {["manual", "push", "pull_request"].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Step</span>
-            <select
-              value={draftFilters.stepKey}
-              onChange={(event) => onDraftFilterChange("stepKey", event.target.value)}
-            >
-              <option value="">All</option>
-              {processSpecs.map((spec) => (
-                <option key={spec.id} value={spec.key}>
-                  {spec.displayName}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="panelActions">
-          <button className="secondaryButton" onClick={onApplyFilters}>
-            Apply filters
-          </button>
-        </div>
-      </section>
-
       <section className="panel tablePanel">
         <header className="panelHeader">
-          <h2>Runs</h2>
+          <div>
+            <h2>Runs</h2>
+            <p className="secondaryText">
+              Attempt history for this repository. Use the header controls to narrow the table.
+            </p>
+          </div>
           <div className="secondaryText">{runsPage ? `${runsPage.total} total` : "Loading"}</div>
         </header>
         {runsPage?.items.length ? (
@@ -180,6 +56,76 @@ export const RunsPage = ({
             <div className="tableScroller">
               <table className="dataTable">
                 <thead>
+                  <tr className="tableControlsRow">
+                    <th colSpan={8}>
+                      <div className="tableControlsBar">
+                        <div className="tableControlsLabel">Browse runs</div>
+                        <div className="tableControlsGroup">
+                          <label className="headerFilter">
+                            <span>Status</span>
+                            <select
+                              value={draftFilters.status}
+                              onChange={(event) =>
+                                onDraftFilterChange("status", event.target.value)
+                              }
+                            >
+                              <option value="">All</option>
+                              {[
+                                "passed",
+                                "failed",
+                                "running",
+                                "queued",
+                                "reused",
+                                "interrupted",
+                              ].map((value) => (
+                                <option key={value} value={value}>
+                                  {value}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="headerFilter">
+                            <span>Trigger</span>
+                            <select
+                              value={draftFilters.trigger}
+                              onChange={(event) =>
+                                onDraftFilterChange("trigger", event.target.value)
+                              }
+                            >
+                              <option value="">All</option>
+                              {["manual", "push", "pull_request"].map((value) => (
+                                <option key={value} value={value}>
+                                  {value}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="headerFilter">
+                            <span>Step</span>
+                            <select
+                              value={draftFilters.stepKey}
+                              onChange={(event) =>
+                                onDraftFilterChange("stepKey", event.target.value)
+                              }
+                            >
+                              <option value="">All</option>
+                              {processSpecs.map((spec) => (
+                                <option key={spec.id} value={spec.key}>
+                                  {spec.displayName}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <button
+                            className="secondaryButton compactButton"
+                            onClick={onApplyFilters}
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    </th>
+                  </tr>
                   <tr>
                     <th>Status</th>
                     <th>Commit</th>
@@ -275,7 +221,7 @@ export const RunsPage = ({
             </footer>
           </>
         ) : (
-          <EmptyState title="No runs matched" body="Change the filters or trigger a new run." />
+          <EmptyState title="No runs matched" body="Change the filters or wait for new attempts." />
         )}
       </section>
     </div>

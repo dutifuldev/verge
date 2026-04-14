@@ -43,13 +43,6 @@ export const App = () => {
     error: commitError,
     treemapError: commitTreemapError,
   } = useCommitDetailData(route);
-
-  const [commitSha, setCommitSha] = useState("");
-  const [branch, setBranch] = useState("main");
-  const [changedFiles, setChangedFiles] = useState("");
-  const [resumeFromCheckpoint, setResumeFromCheckpoint] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
   const [draftFilters, setDraftFilters] = useState(() =>
     route.name === "runs"
       ? {
@@ -155,39 +148,6 @@ export const App = () => {
   );
   const selectedRepositorySlug = selectedRepository?.slug ?? null;
 
-  const submitManualRun = async (): Promise<void> => {
-    if (!selectedRepositorySlug) {
-      return;
-    }
-
-    setSubmitting(true);
-    setSubmitError(null);
-
-    try {
-      const response = await fetchJson<{ runId: string; stepRunIds: string[] }>("/runs/manual", {
-        method: "POST",
-        body: JSON.stringify({
-          repositorySlug: selectedRepositorySlug,
-          commitSha: commitSha.trim(),
-          branch: branch.trim() || undefined,
-          changedFiles: changedFiles
-            .split("\n")
-            .map((value) => value.trim())
-            .filter(Boolean),
-          resumeFromCheckpoint,
-        }),
-      });
-
-      if (response.runId) {
-        navigate(buildRunPath(selectedRepositorySlug, response.runId));
-      }
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Failed to start run");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const applyRunFilters = (): void => {
     if (!selectedRepositorySlug) {
       return;
@@ -256,7 +216,6 @@ export const App = () => {
 
   const error =
     repositoriesError ??
-    submitError ??
     (route.name === "runs"
       ? (stepSpecsError ?? runsError)
       : route.name === "run" || route.name === "step"
@@ -324,17 +283,7 @@ export const App = () => {
           repositorySlug={selectedRepositorySlug}
           runsPage={runsPage}
           processSpecs={stepSpecs}
-          commitSha={commitSha}
-          branch={branch}
-          changedFiles={changedFiles}
-          resumeFromCheckpoint={resumeFromCheckpoint}
-          submitting={submitting}
           draftFilters={draftFilters}
-          onCommitShaChange={setCommitSha}
-          onBranchChange={setBranch}
-          onChangedFilesChange={setChangedFiles}
-          onResumeFromCheckpointChange={setResumeFromCheckpoint}
-          onSubmit={() => void submitManualRun()}
           onDraftFilterChange={(key, value) => {
             setDraftFilters((current) => ({ ...current, [key]: value }));
           }}
