@@ -38,21 +38,30 @@ export const CommitsPage = ({
                 </thead>
                 <tbody>
                   {commitsPage.items.map((commit) => (
-                    <tr
-                      key={commit.commitSha}
-                      className="clickableRow"
-                      onClick={() => {
-                        const targetRepositorySlug = repositorySlug ?? commit.repositorySlug;
-                        if (!targetRepositorySlug) {
-                          return;
-                        }
-
-                        navigate(buildCommitPath(targetRepositorySlug, commit.commitSha));
-                      }}
-                    >
+                    <tr key={commit.commitSha}>
                       <td>
                         <div className="cellStack">
-                          <strong>{commit.commitTitle ?? shortSha(commit.commitSha)}</strong>
+                          <strong>
+                            <a
+                              className="tableLink"
+                              href={buildCommitPath(
+                                repositorySlug ?? commit.repositorySlug,
+                                commit.commitSha,
+                              )}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                const targetRepositorySlug =
+                                  repositorySlug ?? commit.repositorySlug;
+                                if (!targetRepositorySlug) {
+                                  return;
+                                }
+
+                                navigate(buildCommitPath(targetRepositorySlug, commit.commitSha));
+                              }}
+                            >
+                              {commit.commitTitle ?? shortSha(commit.commitSha)}
+                            </a>
+                          </strong>
                           <div className="commitMetaLine secondaryText">
                             <span>{commit.commitAuthorName ?? "Unknown author"}</span>
                             <span>
