@@ -33,27 +33,13 @@ export const RunsPage = ({
   return (
     <div className="pageStack">
       <section className="pageHeader">
-        <div>
-          <h1>Run history</h1>
-          <p className="pageIntro">
-            One row per top-level run. Open a run to inspect the steps and processes inside it.
-          </p>
-        </div>
+        <h1>Runs</h1>
       </section>
 
-      <section className="panel tablePanel">
-        <header className="panelHeader">
-          <div>
-            <h2>Runs</h2>
-            <p className="secondaryText">
-              Attempt history for this repository. Use the header controls to narrow the table.
-            </p>
-          </div>
-          <div className="secondaryText">{runsPage ? `${runsPage.total} total` : "Loading"}</div>
-        </header>
+      <section className="plainTableSection">
         {runsPage?.items.length ? (
           <>
-            <div className="tableScroller">
+            <div className="tableScroller tableScrollerBare">
               <table className="dataTable">
                 <thead>
                   <tr className="tableControlsRow">

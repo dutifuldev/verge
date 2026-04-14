@@ -203,3 +203,8 @@
 .tablePanel {
   overflow: hidden;
 }
+
+.plainTableSection {
+  display: grid;
+  gap: 16px;
+}
