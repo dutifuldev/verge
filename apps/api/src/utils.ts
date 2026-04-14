@@ -154,7 +154,27 @@ export const resolveCommitMetadataMap = async (
         committedAt: committedAt?.trim() || null,
       });
     }
-  } catch {}
+  } catch {
+    for (const commit of uniqueCommits) {
+      try {
+        const output = await runCommand(
+          "git",
+          ["show", "-s", "--format=%H%x00%s%x00%an%x00%cI", commit.commitSha],
+          repositoryRootPath,
+        );
+        const [commitSha, title, authorName, committedAt] = output.trim().split("\u0000");
+        if (!commitSha) {
+          continue;
+        }
+
+        metadata.set(commitSha, {
+          commitTitle: title?.trim() || metadata.get(commitSha)?.commitTitle || null,
+          commitAuthorName: authorName?.trim() || null,
+          committedAt: committedAt?.trim() || null,
+        });
+      } catch {}
+    }
+  }
 
   return metadata;
 };
