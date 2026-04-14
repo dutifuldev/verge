@@ -15,6 +15,12 @@ import { navigate } from "../lib/routing.js";
 const treemapWidth = 1200;
 const treemapHeight = 520;
 type TreemapLayoutNode = HierarchyRectangularNode<TreemapNode>;
+const horizontalPadding = 10;
+
+type NodeTextContent = {
+  primary: string | null;
+  secondary: string | null;
+};
 
 const nodePaddingTop = (depth: number): number => {
   if (depth === 1) {
@@ -28,19 +34,94 @@ const nodePaddingTop = (depth: number): number => {
   return 0;
 };
 
-const shouldShowLabel = (node: TreemapLayoutNode): boolean => {
+const ellipsize = (value: string, maxChars: number): string | null => {
+  if (maxChars <= 0) {
+    return null;
+  }
+
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  if (maxChars <= 1) {
+    return null;
+  }
+
+  return `${value.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+};
+
+const basename = (value: string): string => {
+  const segments = value.split("/");
+  return segments.at(-1) ?? value;
+};
+
+const compactProcessLabel = (value: string): string => {
+  const segments = value
+    .split(" > ")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  return segments.at(-1) ?? value;
+};
+
+const maxCharactersForWidth = (width: number, charWidth: number): number =>
+  Math.floor(width / charWidth);
+
+const buildNodeTextContent = (node: TreemapLayoutNode): NodeTextContent => {
   const width = node.x1 - node.x0;
   const height = node.y1 - node.y0;
+  const textWidth = Math.max(0, width - horizontalPadding * 2);
 
   if (node.data.kind === "step") {
-    return width >= 120 && height >= 48;
+    if (width < 96 || height < 40) {
+      return { primary: null, secondary: null };
+    }
+
+    return {
+      primary: ellipsize(node.data.label, maxCharactersForWidth(textWidth, 7.1)),
+      secondary:
+        width >= 150 && height >= 56
+          ? ellipsize(
+              `${formatDurationMs(node.data.valueMs)} process time`,
+              maxCharactersForWidth(textWidth, 6.2),
+            )
+          : null,
+    };
   }
 
   if (node.data.kind === "file") {
-    return width >= 100 && height >= 42;
+    if (width < 90 || height < 36) {
+      return { primary: null, secondary: null };
+    }
+
+    const fileLabel = basename(node.data.filePath ?? node.data.label);
+
+    return {
+      primary: ellipsize(fileLabel, maxCharactersForWidth(textWidth, 6.9)),
+      secondary:
+        width >= 136 && height >= 48
+          ? ellipsize(formatDurationMs(node.data.valueMs), maxCharactersForWidth(textWidth, 6.1))
+          : null,
+    };
   }
 
-  return width >= 124 && height >= 48;
+  if (width < 110 || height < 28) {
+    return { primary: null, secondary: null };
+  }
+
+  const processLabel = compactProcessLabel(node.data.label);
+  const primary = ellipsize(
+    processLabel,
+    maxCharactersForWidth(textWidth, width >= 180 ? 6.8 : 6.3),
+  );
+
+  return {
+    primary,
+    secondary:
+      primary && width >= 164 && height >= 44
+        ? ellipsize(formatDurationMs(node.data.valueMs), maxCharactersForWidth(textWidth, 6.1))
+        : null,
+  };
 };
 
 const buildTreemapLayout = (tree: TreemapNode): TreemapLayoutNode => {
@@ -122,10 +203,12 @@ export const TreemapView = ({
           role="img"
           viewBox={`0 0 ${treemapWidth} ${treemapHeight}`}
         >
-          {renderedNodes.map((node) => {
+          {renderedNodes.map((node, index) => {
             const width = node.x1 - node.x0;
             const height = node.y1 - node.y0;
             const targetPath = buildNodePath?.(node.data) ?? null;
+            const text = buildNodeTextContent(node);
+            const clipPathId = `treemap-clip-${index}`;
 
             return (
               <g
@@ -133,6 +216,20 @@ export const TreemapView = ({
                 key={node.data.id}
                 transform={`translate(${node.x0},${node.y0})`}
               >
+                {text.primary || text.secondary ? (
+                  <defs>
+                    <clipPath id={clipPathId}>
+                      <rect
+                        height={Math.max(0, height - 8)}
+                        rx={node.data.kind === "process" ? 4 : 8}
+                        ry={node.data.kind === "process" ? 4 : 8}
+                        width={Math.max(0, width - horizontalPadding * 2)}
+                        x={horizontalPadding}
+                        y={6}
+                      />
+                    </clipPath>
+                  </defs>
+                ) : null}
                 <rect
                   className={`treemapNodeRect status-${node.data.status}`}
                   height={Math.max(0, height)}
@@ -164,19 +261,24 @@ export const TreemapView = ({
                     );
                   }}
                 />
-                {shouldShowLabel(node) ? (
-                  <text className={`treemapLabel depth-${node.depth}`} x={10} y={20}>
-                    {node.data.label}
+                {text.primary ? (
+                  <text
+                    className={`treemapLabel depth-${node.depth}`}
+                    clipPath={`url(#${clipPathId})`}
+                    x={horizontalPadding}
+                    y={20}
+                  >
+                    {text.primary}
                   </text>
                 ) : null}
-                {shouldShowLabel(node) && node.data.kind !== "step" ? (
-                  <text className="treemapMeta" x={10} y={38}>
-                    {formatDurationMs(node.data.valueMs)}
-                  </text>
-                ) : null}
-                {shouldShowLabel(node) && node.data.kind === "step" ? (
-                  <text className="treemapMeta" x={10} y={44}>
-                    {formatDurationMs(node.data.valueMs)} process time
+                {text.secondary ? (
+                  <text
+                    className="treemapMeta"
+                    clipPath={`url(#${clipPathId})`}
+                    x={horizontalPadding}
+                    y={node.data.kind === "step" ? 44 : 38}
+                  >
+                    {text.secondary}
                   </text>
                 ) : null}
               </g>
