@@ -27,7 +27,7 @@ export const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T>
 
 export const describeLoadError = (
   route: {
-    name: "overview" | "runs" | "run" | "step" | "commit";
+    name: "commits" | "runs" | "run" | "step" | "commit";
   },
   error: unknown,
   fallback: string,

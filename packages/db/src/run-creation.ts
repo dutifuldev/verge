@@ -66,6 +66,7 @@ export const createRun = async (
     repositoryId: string;
     trigger: RunTrigger;
     commitSha: string;
+    commitTitle?: string | null;
     changedFiles: string[];
     branch?: string;
     pullRequestNumber?: number;
@@ -81,6 +82,7 @@ export const createRun = async (
       event_ingestion_id: input.eventIngestionId ?? null,
       trigger: input.trigger,
       commit_sha: input.commitSha,
+      commit_title: input.commitTitle ?? null,
       branch: input.branch ?? null,
       pull_request_number: input.pullRequestNumber ?? null,
       changed_files: json(input.changedFiles),

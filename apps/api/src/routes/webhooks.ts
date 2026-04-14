@@ -72,6 +72,7 @@ export const registerWebhookRoutes = (app: FastifyInstance, context: ApiContext)
         await createPlannedRun(trx, repository, repositoryDefinition, {
           trigger: "push",
           commitSha: payload.after,
+          commitTitle: payload.head_commit?.message ?? null,
           branch: payload.ref.replace("refs/heads/", ""),
           changedFiles: collectChangedFilesFromPushPayload(payload),
           eventIngestionId: eventIngestion.id,

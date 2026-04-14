@@ -273,6 +273,7 @@ export const schemaMigrations: SchemaMigration[] = [
         event_ingestion_id uuid references event_ingestions(id) on delete set null,
         trigger text not null,
         commit_sha text not null,
+        commit_title text,
         branch text,
         pull_request_number integer,
         changed_files jsonb not null,
@@ -433,6 +434,12 @@ export const schemaMigrations: SchemaMigration[] = [
         on commit_process_state(repository_id, commit_sha, step_key);
       create index if not exists idx_commit_process_state_selected_run
         on commit_process_state(selected_run_id, selected_step_run_id, selected_process_run_id);
+    `,
+  },
+  {
+    id: "005_commit_titles",
+    sql: `
+      alter table runs add column if not exists commit_title text;
     `,
   },
 ];

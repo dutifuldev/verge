@@ -627,24 +627,35 @@ The dashboard should prove the model, not try to be a full observability product
 
 It needs four screens:
 
-- repository overview
+- repository commit list
 - commit or pull request detail
+- runs history
 - run detail
 - step registry
 
-The repository overview should show:
+The repository commit list should show:
 
-- current health by area
-- stale versus fresh evidence
-- active runs
-- most recent failures
+- commits newest first
+- commit message
+- short SHA
+- current commit status
+- commit health coverage
+- attempt count
 
 The commit or pull request detail should show:
 
-- the run and its planned steps
+- the converged commit state
+- step summary for the commit
 - reused versus executed work
 - current status
 - linked observations and artifacts
+- attempt history for that commit
+
+The runs history should show:
+
+- attempt rows
+- execution debugging information
+- filters for recent run behavior
 
 The run detail should show:
 
@@ -809,15 +820,17 @@ Exit criteria:
 
 Implement:
 
-- repository overview page
+- repository commit list page
 - commit or pull request detail page
+- runs history page
 - run detail page
 - SSE-driven live updates
 
 Exit criteria:
 
+- users can inspect commit health from a commit-first repository page
 - users can watch a run progress live
-- users can inspect current health and evidence history without looking at raw database rows
+- users can inspect current health and attempt history without looking at raw database rows
 - users can inspect a real Verge-on-Verge run from the dashboard
 
 ### Phase 6: Reuse

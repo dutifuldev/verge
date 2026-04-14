@@ -196,8 +196,18 @@ This is also the most scalable approach. As history grows, Verge should read the
 
 The UI should show:
 
+- repository page: commit list
 - run page: one attempt
 - commit page: converged state for one commit
+
+The repository page should be commit-first.
+
+That means:
+
+- `/repos/:repo` should show commits newest first
+- each commit row should show commit message, short SHA, status, coverage, and attempt count
+- `/repos/:repo/commits/:sha` should be the main detail view for repository health
+- `/repos/:repo/runs` should remain available as secondary attempt history and debugging surface
 
 The commit page should include:
 

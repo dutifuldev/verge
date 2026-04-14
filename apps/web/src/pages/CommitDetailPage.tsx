@@ -37,7 +37,7 @@ export const CommitDetailPage = ({
     <div className="pageStack">
       <section className="pageHeader">
         <div>
-          <h1>Commit {shortSha(commit.commitSha)}</h1>
+          <h1>{commit.commitTitle ?? `Commit ${shortSha(commit.commitSha)}`}</h1>
           <p className="pageIntro">
             This page shows the converged health for one commit across all runs, plus the attempt
             history that produced it.
@@ -55,7 +55,7 @@ export const CommitDetailPage = ({
         <div className="summaryCard">
           <span className="summaryLabel">Commit</span>
           <strong className="monoText">{shortSha(commit.commitSha)}</strong>
-          <span className="summaryMeta breakText">{commit.commitSha}</span>
+          <span className="summaryMeta breakText">{commit.commitTitle ?? commit.commitSha}</span>
         </div>
         <div className="summaryCard">
           <span className="summaryLabel">Selected process time</span>

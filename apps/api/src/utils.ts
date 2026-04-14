@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { spawn } from "node:child_process";
 
 type PushPayload = {
   commits: Array<{
@@ -53,6 +54,52 @@ export const parseStringArray = (value: unknown): string[] => {
   }
 
   return [];
+};
+
+const runCommand = async (command: string, args: string[], cwd: string): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    child.stdout?.on("data", (chunk: Buffer | string) => stdout.push(String(chunk)));
+    child.stderr?.on("data", (chunk: Buffer | string) => stderr.push(String(chunk)));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if ((code ?? 1) !== 0) {
+        reject(new Error(stderr.join("").trim() || `${command} exited with ${code ?? 1}`));
+        return;
+      }
+
+      resolve(stdout.join(""));
+    });
+  });
+
+export const resolveCommitTitle = async (
+  repositoryRootPath: string,
+  commitSha: string,
+  fallbackTitle?: string | null,
+): Promise<string> => {
+  if (fallbackTitle && fallbackTitle.trim().length > 0) {
+    return fallbackTitle.trim().split("\n")[0] ?? fallbackTitle.trim();
+  }
+
+  try {
+    const subject = await runCommand(
+      "git",
+      ["show", "-s", "--format=%s", commitSha],
+      repositoryRootPath,
+    );
+    const normalized = subject.trim();
+    if (normalized.length > 0) {
+      return normalized.split("\n")[0] ?? normalized;
+    }
+  } catch {}
+
+  return `Commit ${commitSha.slice(0, 7)}`;
 };
 
 export const sendSse = (reply: {

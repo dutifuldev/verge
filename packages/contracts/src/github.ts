@@ -6,6 +6,12 @@ export const githubWebhookPushPayloadSchema = z.object({
   repository: z.object({
     full_name: z.string().min(1),
   }),
+  head_commit: z
+    .object({
+      message: z.string().min(1),
+    })
+    .nullable()
+    .optional(),
   commits: z
     .array(
       z.object({

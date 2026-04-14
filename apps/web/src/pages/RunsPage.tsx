@@ -15,7 +15,17 @@ export const RunsPage = ({
   repositorySlug,
   runsPage,
   processSpecs,
+  commitSha,
+  branch,
+  changedFiles,
+  resumeFromCheckpoint,
+  submitting,
   draftFilters,
+  onCommitShaChange,
+  onBranchChange,
+  onChangedFilesChange,
+  onResumeFromCheckpointChange,
+  onSubmit,
   onDraftFilterChange,
   onApplyFilters,
   onPageChange,
@@ -23,7 +33,17 @@ export const RunsPage = ({
   repositorySlug: string | null;
   runsPage: PaginatedRunList | null;
   processSpecs: StepSpecSummary[];
+  commitSha: string;
+  branch: string;
+  changedFiles: string;
+  resumeFromCheckpoint: boolean;
+  submitting: boolean;
   draftFilters: { status: string; trigger: string; stepKey: string };
+  onCommitShaChange: (value: string) => void;
+  onBranchChange: (value: string) => void;
+  onChangedFilesChange: (value: string) => void;
+  onResumeFromCheckpointChange: (value: boolean) => void;
+  onSubmit: () => void;
   onDraftFilterChange: (key: "status" | "trigger" | "stepKey", value: string) => void;
   onApplyFilters: () => void;
   onPageChange: (page: number) => void;
@@ -38,6 +58,60 @@ export const RunsPage = ({
           <p className="pageIntro">
             One row per top-level run. Open a run to inspect the steps and processes inside it.
           </p>
+        </div>
+      </section>
+
+      <section className="panel">
+        <header className="panelHeader">
+          <div>
+            <h2>Create a run</h2>
+            <p className="secondaryText">
+              Manual runs live here so the repository landing page can stay focused on commits.
+            </p>
+          </div>
+        </header>
+        <div className="formGrid">
+          <label className="field">
+            <span>Commit SHA</span>
+            <input
+              value={commitSha}
+              onChange={(event) => onCommitShaChange(event.target.value)}
+              placeholder="Paste the commit SHA to evaluate"
+            />
+          </label>
+          <label className="field">
+            <span>Branch</span>
+            <input
+              value={branch}
+              onChange={(event) => onBranchChange(event.target.value)}
+              placeholder="main"
+            />
+          </label>
+          <label className="field span2">
+            <span>Changed files</span>
+            <textarea
+              value={changedFiles}
+              onChange={(event) => onChangedFilesChange(event.target.value)}
+              placeholder={"apps/web/src/App.tsx\napps/web/src/styles.css"}
+            />
+          </label>
+          <label className="checkboxField span2">
+            <input
+              type="checkbox"
+              checked={resumeFromCheckpoint}
+              onChange={(event) => onResumeFromCheckpointChange(event.target.checked)}
+            />
+            <span>Resume from the latest compatible checkpoint when available.</span>
+          </label>
+        </div>
+        <div className="panelActions">
+          <button
+            className="primaryButton"
+            disabled={submitting || commitSha.trim().length === 0}
+            onClick={() => void onSubmit()}
+          >
+            {submitting ? "Submitting..." : "Start run"}
+          </button>
         </div>
       </section>
 

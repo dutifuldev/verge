@@ -82,6 +82,23 @@ describe.runIf(runIntegration)("api integration", () => {
       page: 1,
       pageSize: 5,
     });
+
+    const commitsResponse = await app.inject({
+      method: "GET",
+      url: "/repositories/verge/commits?page=1&pageSize=5",
+    });
+    expect(commitsResponse.statusCode).toBe(200);
+    expect(commitsResponse.json()).toMatchObject({
+      page: 1,
+      pageSize: 5,
+      items: [
+        expect.objectContaining({
+          commitSha: "integration-sha",
+          attemptCount: 1,
+          coveragePercent: expect.any(Number),
+        }),
+      ],
+    });
   }, 30_000);
 
   it("returns 404 for missing runs and steps after a reset", async () => {

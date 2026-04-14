@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
 
-import { createManualRunInputSchema, runListQuerySchema } from "@verge/contracts";
+import {
+  commitListQuerySchema,
+  createManualRunInputSchema,
+  runListQuerySchema,
+} from "@verge/contracts";
 import {
   getCommitDetail,
   getCommitTreemap,
@@ -11,6 +15,7 @@ import {
   getRunDetail,
   getRunTreemap,
   getStepRunDetail,
+  listRepositoryCommits,
   listRepositories,
   listRepositoryRuns,
   listStepSpecSummaries,
@@ -99,6 +104,14 @@ export const registerPublicRoutes = (app: FastifyInstance, context: ApiContext):
       context.connection.db,
       (request.params as { repo: string }).repo,
       runListQuerySchema.parse(request.query),
+    ),
+  );
+
+  app.get("/repositories/:repo/commits", async (request) =>
+    listRepositoryCommits(
+      context.connection.db,
+      (request.params as { repo: string }).repo,
+      commitListQuerySchema.parse(request.query),
     ),
   );
 

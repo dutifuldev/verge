@@ -1,7 +1,10 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 
 import type {
+  CommitListItem,
+  CommitListQuery,
   CommitDetail,
+  PaginatedCommitList,
   PaginatedRunList,
   PullRequestDetail,
   RepositoryHealth,
@@ -168,6 +171,132 @@ export const listRepositoryRuns = async (
     pageSize,
     total: filtered.length,
     items: filtered.slice(offset, offset + pageSize),
+  };
+};
+
+const fallbackCommitTitle = (commitTitle: string | null, commitSha: string): string =>
+  commitTitle && commitTitle.trim().length > 0 ? commitTitle : `Commit ${commitSha.slice(0, 7)}`;
+
+export const listRepositoryCommits = async (
+  db: Kysely<VergeDatabase>,
+  repositorySlug: string,
+  query: CommitListQuery,
+): Promise<PaginatedCommitList> => {
+  const page = Math.max(1, query.page);
+  const pageSize = Math.max(1, Math.min(100, query.pageSize));
+  const offset = (page - 1) * pageSize;
+
+  const repository = await db
+    .selectFrom("repositories")
+    .select(["id", "slug"])
+    .where("slug", "=", repositorySlug)
+    .executeTakeFirstOrThrow();
+
+  const runRows = await selectRunRows(db, repositorySlug)
+    .orderBy("runs.created_at", "desc")
+    .execute();
+  const orderedCommits: string[] = [];
+  const latestRunByCommit = new Map<string, (typeof runRows)[number]>();
+  const attemptCountByCommit = new Map<string, number>();
+
+  for (const run of runRows) {
+    if (!latestRunByCommit.has(run.commitSha)) {
+      orderedCommits.push(run.commitSha);
+      latestRunByCommit.set(run.commitSha, run);
+    }
+
+    attemptCountByCommit.set(run.commitSha, (attemptCountByCommit.get(run.commitSha) ?? 0) + 1);
+  }
+
+  const total = orderedCommits.length;
+  const pageCommitShas = orderedCommits.slice(offset, offset + pageSize);
+
+  if (pageCommitShas.length === 0) {
+    return {
+      page,
+      pageSize,
+      total,
+      items: [],
+    };
+  }
+
+  const projectionRows = await db
+    .selectFrom("commit_process_state")
+    .select(["commit_sha as commitSha", "status"])
+    .where("repository_id", "=", repository.id)
+    .where("commit_sha", "in", pageCommitShas)
+    .execute();
+
+  const expectedCountRows = await db
+    .selectFrom("process_runs")
+    .innerJoin("step_runs", "step_runs.id", "process_runs.step_run_id")
+    .innerJoin("runs", "runs.id", "step_runs.run_id")
+    .select([
+      "runs.commit_sha as commitSha",
+      sql<number>`count(distinct step_runs.step_key || ':' || process_runs.process_key)`.as(
+        "expectedProcessCount",
+      ),
+    ])
+    .where("runs.repository_id", "=", repository.id)
+    .where("runs.commit_sha", "in", pageCommitShas)
+    .groupBy("runs.commit_sha")
+    .execute();
+
+  const statusesByCommit = new Map<string, string[]>();
+  const selectedCountByCommit = new Map<string, number>();
+  const healthyCountByCommit = new Map<string, number>();
+
+  for (const row of projectionRows) {
+    const statuses = statusesByCommit.get(row.commitSha) ?? [];
+    statuses.push(row.status);
+    statusesByCommit.set(row.commitSha, statuses);
+    selectedCountByCommit.set(row.commitSha, (selectedCountByCommit.get(row.commitSha) ?? 0) + 1);
+    if (["passed", "reused", "skipped"].includes(row.status)) {
+      healthyCountByCommit.set(row.commitSha, (healthyCountByCommit.get(row.commitSha) ?? 0) + 1);
+    }
+  }
+
+  const expectedCountByCommit = new Map(
+    expectedCountRows.map((row) => [row.commitSha, Number(row.expectedProcessCount)]),
+  );
+
+  const items: CommitListItem[] = [];
+
+  for (const commitSha of pageCommitShas) {
+    const latestRun = latestRunByCommit.get(commitSha);
+    if (!latestRun) {
+      continue;
+    }
+
+    const statuses = statusesByCommit.get(commitSha) ?? [];
+    const coveredProcessCount = selectedCountByCommit.get(commitSha) ?? 0;
+    const expectedProcessCount = expectedCountByCommit.get(commitSha) ?? 0;
+    const healthyProcessCount = healthyCountByCommit.get(commitSha) ?? 0;
+
+    items.push({
+      repositorySlug,
+      commitSha,
+      commitTitle: fallbackCommitTitle(latestRun.commitTitle, commitSha),
+      status: (statuses.length > 0
+        ? summarizeStatuses(statuses)
+        : latestRun.status) as CommitListItem["status"],
+      coveragePercent:
+        expectedProcessCount === 0
+          ? 0
+          : Math.round((coveredProcessCount / expectedProcessCount) * 100),
+      coveredProcessCount,
+      expectedProcessCount,
+      healthyProcessCount,
+      attemptCount: attemptCountByCommit.get(commitSha) ?? 0,
+      latestCreatedAt: latestRun.createdAt.toISOString(),
+    });
+  }
+
+  return {
+    page,
+    pageSize,
+    total,
+    items,
   };
 };
 
@@ -359,6 +488,7 @@ export const getCommitDetail = async (
   return {
     repositorySlug: repository.slug,
     commitSha,
+    commitTitle: fallbackCommitTitle(runs[0]?.commitTitle ?? null, commitSha),
     status: (processes.length > 0
       ? summarizeStatuses(processes.map((process) => process.status))
       : summarizeStatuses(runs.map((run) => run.status))) as CommitDetail["status"],

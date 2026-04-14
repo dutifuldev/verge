@@ -1,5 +1,5 @@
 export type AppRoute =
-  | { name: "overview"; repositorySlug: string | null }
+  | { name: "commits"; repositorySlug: string | null; page: number }
   | { name: "commit"; repositorySlug: string | null; commitSha: string }
   | {
       name: "runs";
@@ -12,8 +12,20 @@ export type AppRoute =
   | { name: "step"; repositorySlug: string | null; runId: string; stepId: string }
   | { name: "run"; repositorySlug: string | null; runId: string };
 
-export const buildRepositoryOverviewPath = (repositorySlug: string): string =>
-  `/repos/${repositorySlug}`;
+export const buildRepositoryCommitsPath = (
+  repositorySlug: string,
+  input?: {
+    page?: number;
+  },
+): string => {
+  const search = new URLSearchParams();
+  if (input?.page && input.page !== 1) {
+    search.set("page", String(input.page));
+  }
+
+  const query = search.toString();
+  return query.length > 0 ? `/repos/${repositorySlug}?${query}` : `/repos/${repositorySlug}`;
+};
 
 export const buildRepositoryRunsPath = (
   repositorySlug: string,
@@ -56,10 +68,10 @@ export const buildStepPath = (repositorySlug: string, runId: string, stepId: str
 export const parseRoute = (): AppRoute => {
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   const search = new URLSearchParams(window.location.search);
+  const pageValue = Number(search.get("page") ?? "1");
 
   const repoRunsMatch = path.match(/^\/repos\/([^/]+)\/runs$/);
   if (repoRunsMatch) {
-    const pageValue = Number(search.get("page") ?? "1");
     return {
       name: "runs",
       repositorySlug: repoRunsMatch[1] ?? null,
@@ -96,11 +108,14 @@ export const parseRoute = (): AppRoute => {
 
   const repoOverviewMatch = path.match(/^\/repos\/([^/]+)$/);
   if (repoOverviewMatch) {
-    return { name: "overview", repositorySlug: repoOverviewMatch[1] ?? null };
+    return {
+      name: "commits",
+      repositorySlug: repoOverviewMatch[1] ?? null,
+      page: Number.isFinite(pageValue) && pageValue > 0 ? pageValue : 1,
+    };
   }
 
   if (path === "/runs") {
-    const pageValue = Number(search.get("page") ?? "1");
     return {
       name: "runs",
       repositorySlug: null,
@@ -121,7 +136,11 @@ export const parseRoute = (): AppRoute => {
     return { name: "run", repositorySlug: null, runId: runMatch[1]! };
   }
 
-  return { name: "overview", repositorySlug: null };
+  return {
+    name: "commits",
+    repositorySlug: null,
+    page: Number.isFinite(pageValue) && pageValue > 0 ? pageValue : 1,
+  };
 };
 
 export const navigate = (path: string): void => {

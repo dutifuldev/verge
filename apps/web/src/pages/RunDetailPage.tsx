@@ -35,7 +35,7 @@ export const RunDetailPage = ({
     <div className="pageStack">
       <section className="pageHeader">
         <div>
-          <h1>Run {shortSha(run.commitSha)}</h1>
+          <h1>{run.commitTitle ?? `Run ${shortSha(run.commitSha)}`}</h1>
           <p className="pageIntro">
             {run.trigger} trigger with {run.steps.length} steps and {run.changedFiles.length}{" "}
             changed files.
@@ -66,7 +66,7 @@ export const RunDetailPage = ({
           >
             {shortSha(run.commitSha)}
           </a>
-          <span className="summaryMeta">{run.branch ?? "No branch"}</span>
+          <span className="summaryMeta">{run.commitTitle ?? run.branch ?? "No branch"}</span>
         </div>
         <div className="summaryCard">
           <span className="summaryLabel">Trigger</span>

@@ -73,6 +73,7 @@ type RunsTable = {
   event_ingestion_id: string | null;
   trigger: string;
   commit_sha: string;
+  commit_title: string | null;
   branch: string | null;
   pull_request_number: number | null;
   changed_files: Json;

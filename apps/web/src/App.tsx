@@ -2,23 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { RepositorySummary } from "@verge/contracts";
 
-import { NavLink, StatusPill } from "./components/common.js";
+import { NavLink } from "./components/common.js";
 import { useAppRoute } from "./hooks/use-app-route.js";
+import { useCommitListData } from "./hooks/use-commit-list-data.js";
 import { useCommitDetailData } from "./hooks/use-commit-detail-data.js";
-import { useOverviewData } from "./hooks/use-overview-data.js";
 import { useRunDetailData } from "./hooks/use-run-detail-data.js";
 import { useRunsPageData } from "./hooks/use-runs-page-data.js";
+import { useStepSpecs } from "./hooks/use-step-specs.js";
 import {
   buildCommitPath,
-  buildRepositoryOverviewPath,
+  buildRepositoryCommitsPath,
   buildRepositoryRunsPath,
   buildRunPath,
   buildStepPath,
   navigate,
 } from "./lib/routing.js";
 import { statusTone } from "./lib/format.js";
+import { CommitsPage } from "./pages/CommitsPage.js";
 import { CommitDetailPage } from "./pages/CommitDetailPage.js";
-import { OverviewPage } from "./pages/OverviewPage.js";
 import { RunDetailPage } from "./pages/RunDetailPage.js";
 import { RunsPage } from "./pages/RunsPage.js";
 import { StepDetailPage } from "./pages/StepDetailPage.js";
@@ -32,7 +33,8 @@ export const App = () => {
   const [preferredRepositorySlug, setPreferredRepositorySlug] = useState<string | null>(null);
   const [repositoriesError, setRepositoriesError] = useState<string | null>(null);
   const currentRepositorySlug = route.repositorySlug ?? preferredRepositorySlug;
-  const { health, processSpecs, error: overviewError } = useOverviewData(currentRepositorySlug);
+  const { commitsPage, error: commitsError } = useCommitListData(route, currentRepositorySlug);
+  const { stepSpecs, error: stepSpecsError } = useStepSpecs(currentRepositorySlug);
   const { runsPage, error: runsError } = useRunsPageData(route, currentRepositorySlug);
   const { run, treemap, step, error: runError, treemapError } = useRunDetailData(route);
   const {
@@ -105,8 +107,8 @@ export const App = () => {
       return;
     }
 
-    if (route.name === "overview") {
-      navigate(buildRepositoryOverviewPath(fallbackRepositorySlug));
+    if (route.name === "commits") {
+      navigate(buildRepositoryCommitsPath(fallbackRepositorySlug, { page: route.page }));
       return;
     }
 
@@ -147,7 +149,6 @@ export const App = () => {
     });
   }, [route]);
 
-  const activeRunCount = useMemo(() => health?.activeRuns.length ?? 0, [health]);
   const selectedRepository = useMemo(
     () => repositories.find((repository) => repository.slug === currentRepositorySlug) ?? null,
     [currentRepositorySlug, repositories],
@@ -217,11 +218,19 @@ export const App = () => {
     );
   };
 
+  const changeCommitsPage = (page: number): void => {
+    if (route.name !== "commits" || !selectedRepositorySlug) {
+      return;
+    }
+
+    navigate(buildRepositoryCommitsPath(selectedRepositorySlug, { page }));
+  };
+
   const navigateToRepository = (nextRepositorySlug: string): void => {
     setPreferredRepositorySlug(nextRepositorySlug);
 
-    if (route.name === "overview") {
-      navigate(buildRepositoryOverviewPath(nextRepositorySlug));
+    if (route.name === "commits") {
+      navigate(buildRepositoryCommitsPath(nextRepositorySlug, { page: route.page }));
       return;
     }
 
@@ -249,12 +258,12 @@ export const App = () => {
     repositoriesError ??
     submitError ??
     (route.name === "runs"
-      ? runsError
+      ? (stepSpecsError ?? runsError)
       : route.name === "run" || route.name === "step"
         ? runError
         : route.name === "commit"
           ? commitError
-          : overviewError);
+          : commitsError);
 
   return (
     <main className="appShell">
@@ -286,48 +295,27 @@ export const App = () => {
         </div>
         <nav className="topnav">
           <NavLink
-            active={route.name === "overview"}
-            href={
-              selectedRepositorySlug ? buildRepositoryOverviewPath(selectedRepositorySlug) : "/"
-            }
-            label="Overview"
+            active={route.name === "commits" || route.name === "commit"}
+            href={selectedRepositorySlug ? buildRepositoryCommitsPath(selectedRepositorySlug) : "/"}
+            label="Commits"
           />
           <NavLink
-            active={
-              route.name === "runs" ||
-              route.name === "run" ||
-              route.name === "step" ||
-              route.name === "commit"
-            }
+            active={route.name === "runs" || route.name === "run" || route.name === "step"}
             href={
               selectedRepositorySlug ? buildRepositoryRunsPath(selectedRepositorySlug) : "/runs"
             }
             label="Runs"
           />
         </nav>
-        <div className="topbarMeta">
-          <StatusPill status={activeRunCount > 0 ? "running" : "passed"} />
-          <span className="secondaryText">{activeRunCount} active</span>
-        </div>
       </header>
 
       {error ? <div className="errorBanner">{error}</div> : null}
 
-      {route.name === "overview" ? (
-        <OverviewPage
+      {route.name === "commits" ? (
+        <CommitsPage
           repositorySlug={selectedRepositorySlug}
-          health={health}
-          processSpecs={processSpecs}
-          commitSha={commitSha}
-          branch={branch}
-          changedFiles={changedFiles}
-          resumeFromCheckpoint={resumeFromCheckpoint}
-          submitting={submitting}
-          onCommitShaChange={setCommitSha}
-          onBranchChange={setBranch}
-          onChangedFilesChange={setChangedFiles}
-          onResumeFromCheckpointChange={setResumeFromCheckpoint}
-          onSubmit={() => void submitManualRun()}
+          commitsPage={commitsPage}
+          onPageChange={changeCommitsPage}
         />
       ) : null}
 
@@ -335,8 +323,18 @@ export const App = () => {
         <RunsPage
           repositorySlug={selectedRepositorySlug}
           runsPage={runsPage}
-          processSpecs={processSpecs}
+          processSpecs={stepSpecs}
+          commitSha={commitSha}
+          branch={branch}
+          changedFiles={changedFiles}
+          resumeFromCheckpoint={resumeFromCheckpoint}
+          submitting={submitting}
           draftFilters={draftFilters}
+          onCommitShaChange={setCommitSha}
+          onBranchChange={setBranch}
+          onChangedFilesChange={setChangedFiles}
+          onResumeFromCheckpointChange={setResumeFromCheckpoint}
+          onSubmit={() => void submitManualRun()}
           onDraftFilterChange={(key, value) => {
             setDraftFilters((current) => ({ ...current, [key]: value }));
           }}

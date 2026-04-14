@@ -8,9 +8,10 @@ tags: [verge, ui, ux, runs, processes]
 
 The current single-page UI is the wrong shape for the product.
 
-Verge has at least four different levels of information:
+Verge has at least five different levels of information:
 
-- repository state
+- repository commit history
+- commit health
 - runs
 - steps inside a run
 - processes inside a step
@@ -25,53 +26,77 @@ The UI should reflect the backend model directly:
 - a `step` is a major check inside a run, like `test`, `build`, or `lint`
 - a `process` is the smallest meaningful thing Verge tracks inside a step
 
-That means the main navigation should be built around runs, not around one large homepage panel.
+That means the main navigation should be built around commits first, with runs as secondary execution history.
 
 ## Recommended Shape
 
 The product should have a small number of clear views:
 
-1. A repository overview
-2. A runs list
-3. A run detail view
-4. Optional process detail views later
+1. A repository commit list
+2. A commit detail view
+3. A runs history view
+4. A run detail view
+5. Optional process detail views later
 
 The repository should be part of the URL. The UI should not rely on a hidden in-memory repository selector as the only source of context.
 
 Recommended route shape:
 
 - `/repos/:repo`
+- `/repos/:repo/commits/:sha`
 - `/repos/:repo/runs`
 - `/repos/:repo/runs/:runId`
 - `/repos/:repo/runs/:runId/steps/:stepId`
 
 The repository selector should still exist, but it should navigate between repository-scoped routes instead of carrying the active repository only in local UI state.
 
-## Repository Overview
+## Repository Commit List
 
 This page should answer:
 
-- what repository is this
-- what is happening right now
-- what areas are healthy, stale, or unknown
-- what changed recently
+- what commits exist for this repository
+- what is the current health state of each commit
+- which commits are fully covered and which are not
+- which commits needed multiple attempts
 
-This is a summary page, not the main operational surface.
+This should be the main operational surface for a repository.
+
+It should show one row per commit, newest first.
+
+Each row should show:
+
+- commit message
+- short SHA
+- current status
+- health coverage
+- attempt count
+
+It should not try to show the full structure of every run inline.
+
+This page should feel closer to GitHub's commits view than to a dashboard homepage.
+
+## Commit Detail View
+
+This page should answer:
+
+- what is the current converged health state of this commit
+- which steps are healthy or unhealthy
+- which processes remain missing or failed
+- how many attempts were needed to reach the current state
+
+This should be the main detail surface for normal CI use.
 
 It should show:
 
-- repository name
-- active runs
-- latest run results
-- area health summary
-- high-level freshness
-- short links into filtered runs
+- commit summary
+- commit treemap
+- step health summary
+- process-level drill-down entry points
+- attempt history for that commit
 
-It should not try to show the full structure of every run.
+## Runs History
 
-## Runs List
-
-This should be the main working view.
+This should be the secondary working view.
 
 It should be a paginated table with one row per run.
 
@@ -112,7 +137,7 @@ Recommended actions:
 - rerun without reuse
 - rerun from checkpoint when supported
 
-This page should feel closer to a CI runs table than a marketing dashboard.
+This page should feel closer to an execution history and debugging surface than the default repository view.
 
 ## Run Detail View
 
@@ -276,10 +301,10 @@ This is useful, but not required for the first good UI.
 
 The navigation should be plain:
 
-- `Overview`
+- `Commits`
 - `Runs`
 
-Then link from `Runs` to individual run detail pages.
+Then link from `Commits` to commit detail pages and from `Runs` to individual run detail pages.
 
 Do not make the landing page try to be the whole application.
 
@@ -289,15 +314,15 @@ The UI should move away from hash-based navigation.
 
 Recommended routes:
 
-- `/`
-- `/runs`
-- `/runs/:runId`
-- `/runs/:runId/steps/:stepId`
+- `/repos/:repo`
+- `/repos/:repo/commits/:sha`
+- `/repos/:repo/runs`
+- `/repos/:repo/runs/:runId`
+- `/repos/:repo/runs/:runId/steps/:stepId`
 
 Optional later:
 
-- `/repositories/:slug`
-- `/runs/:runId/processes/:processId`
+- `/repos/:repo/runs/:runId/processes/:processId`
 
 Normal routes are easier to reason about, easier to share, and easier to extend.
 
@@ -334,11 +359,11 @@ The goal is to make the interface feel immediately legible and operational, like
 
 The next UI iteration should do only this:
 
-1. Keep a small repository overview on `/`
-2. Add a dedicated paginated `/runs` table
-3. Add a dedicated `/runs/:runId` detail page
-4. Make the run page show steps only
-5. Add a dedicated `/runs/:runId/steps/:stepId` page for process detail
+1. Replace the overview page with a commit list on `/repos/:repo`
+2. Add a commit detail page on `/repos/:repo/commits/:sha`
+3. Keep a dedicated paginated `/repos/:repo/runs` table for attempt history
+4. Make the run page show one attempt and its steps only
+5. Keep a dedicated `/repos/:repo/runs/:runId/steps/:stepId` page for process detail
 6. Move event, observation, artifact, and checkpoint detail into the step page
 7. Remove slogan-style copy from the main view
 

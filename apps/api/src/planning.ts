@@ -16,7 +16,7 @@ import {
   type DatabaseExecutor,
 } from "@verge/db";
 
-import { parseStringArray } from "./utils.js";
+import { parseStringArray, resolveCommitTitle } from "./utils.js";
 
 const interruptPendingProcessesForStepRun = async (
   db: DatabaseExecutor,
@@ -63,6 +63,7 @@ export const createPlannedRun = async (
   input: {
     trigger: "manual" | "push" | "pull_request";
     commitSha: string;
+    commitTitle?: string | null;
     branch?: string;
     changedFiles?: string[];
     requestedStepKeys?: string[];
@@ -76,11 +77,17 @@ export const createPlannedRun = async (
   stepRunIds: string[];
 }> => {
   const stepSpecs = await getStepSpecsForRepository(db, repository.id);
+  const commitTitle = await resolveCommitTitle(
+    repository.root_path,
+    input.commitSha,
+    input.commitTitle,
+  );
 
   const run = await createRun(db, {
     repositoryId: repository.id,
     trigger: input.trigger,
     commitSha: input.commitSha,
+    commitTitle,
     changedFiles: input.changedFiles ?? [],
     ...(input.eventIngestionId ? { eventIngestionId: input.eventIngestionId } : {}),
     ...(input.branch ? { branch: input.branch } : {}),

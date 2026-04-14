@@ -244,7 +244,7 @@ That means:
 - one Verge instance
 - many repositories
 - a repository switcher or repository list
-- repository-scoped overview, runs, run detail, and step detail pages
+- repository-scoped commit list, commit detail, runs history, run detail, and step detail pages
 
 The test repository should be visible beside the Verge repository in the same UI.
 

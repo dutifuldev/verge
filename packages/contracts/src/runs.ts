@@ -47,11 +47,17 @@ export const runListQuerySchema = z.object({
   stepKey: z.string().min(1).optional(),
 });
 
+export const commitListQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+});
+
 export const runSummarySchema = z.object({
   id: z.string().uuid(),
   repositorySlug: z.string(),
   trigger: runTriggerSchema,
   commitSha: z.string(),
+  commitTitle: z.string().nullable(),
   branch: z.string().nullable(),
   pullRequestNumber: z.number().int().positive().nullable(),
   changedFiles: z.array(z.string()),
@@ -70,6 +76,26 @@ export const paginatedRunListSchema = z.object({
   pageSize: z.number().int().positive(),
   total: z.number().int().nonnegative(),
   items: z.array(runListItemSchema),
+});
+
+export const commitListItemSchema = z.object({
+  repositorySlug: z.string(),
+  commitSha: z.string(),
+  commitTitle: z.string().nullable(),
+  status: runStatusSchema,
+  coveragePercent: z.number().int().min(0).max(100),
+  coveredProcessCount: z.number().int().nonnegative(),
+  expectedProcessCount: z.number().int().nonnegative(),
+  healthyProcessCount: z.number().int().nonnegative(),
+  attemptCount: z.number().int().nonnegative(),
+  latestCreatedAt: z.string().datetime(),
+});
+
+export const paginatedCommitListSchema = z.object({
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  total: z.number().int().nonnegative(),
+  items: z.array(commitListItemSchema),
 });
 
 export const observationSummarySchema = z.object({
@@ -183,6 +209,7 @@ export const repositoryHealthSchema = z.object({
 export const commitDetailSchema = z.object({
   repositorySlug: z.string(),
   commitSha: z.string(),
+  commitTitle: z.string().nullable(),
   status: runStatusSchema,
   steps: z.array(commitStepSummarySchema),
   processes: z.array(commitProcessSummarySchema),
@@ -199,8 +226,11 @@ export const pullRequestDetailSchema = z.object({
 export type RunSummary = z.infer<typeof runSummarySchema>;
 export type StepRunSummary = z.infer<typeof stepRunSummarySchema>;
 export type RunListQuery = z.infer<typeof runListQuerySchema>;
+export type CommitListQuery = z.infer<typeof commitListQuerySchema>;
 export type RunListItem = z.infer<typeof runListItemSchema>;
 export type PaginatedRunList = z.infer<typeof paginatedRunListSchema>;
+export type CommitListItem = z.infer<typeof commitListItemSchema>;
+export type PaginatedCommitList = z.infer<typeof paginatedCommitListSchema>;
 export type RunDetail = z.infer<typeof runDetailSchema>;
 export type StepRunDetail = z.infer<typeof stepRunDetailSchema>;
 export type RepositoryHealth = z.infer<typeof repositoryHealthSchema>;
