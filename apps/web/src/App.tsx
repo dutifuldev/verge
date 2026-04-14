@@ -4,10 +4,12 @@ import type { RepositorySummary } from "@verge/contracts";
 
 import { NavLink, StatusPill } from "./components/common.js";
 import { useAppRoute } from "./hooks/use-app-route.js";
+import { useCommitDetailData } from "./hooks/use-commit-detail-data.js";
 import { useOverviewData } from "./hooks/use-overview-data.js";
 import { useRunDetailData } from "./hooks/use-run-detail-data.js";
 import { useRunsPageData } from "./hooks/use-runs-page-data.js";
 import {
+  buildCommitPath,
   buildRepositoryOverviewPath,
   buildRepositoryRunsPath,
   buildRunPath,
@@ -15,6 +17,7 @@ import {
   navigate,
 } from "./lib/routing.js";
 import { statusTone } from "./lib/format.js";
+import { CommitDetailPage } from "./pages/CommitDetailPage.js";
 import { OverviewPage } from "./pages/OverviewPage.js";
 import { RunDetailPage } from "./pages/RunDetailPage.js";
 import { RunsPage } from "./pages/RunsPage.js";
@@ -32,6 +35,12 @@ export const App = () => {
   const { health, processSpecs, error: overviewError } = useOverviewData(currentRepositorySlug);
   const { runsPage, error: runsError } = useRunsPageData(route, currentRepositorySlug);
   const { run, treemap, step, error: runError, treemapError } = useRunDetailData(route);
+  const {
+    commit,
+    treemap: commitTreemap,
+    error: commitError,
+    treemapError: commitTreemapError,
+  } = useCommitDetailData(route);
 
   const [commitSha, setCommitSha] = useState("");
   const [branch, setBranch] = useState("main");
@@ -115,6 +124,11 @@ export const App = () => {
 
     if (route.name === "run") {
       navigate(buildRunPath(fallbackRepositorySlug, route.runId));
+      return;
+    }
+
+    if (route.name === "commit") {
+      navigate(buildCommitPath(fallbackRepositorySlug, route.commitSha));
       return;
     }
 
@@ -223,6 +237,11 @@ export const App = () => {
       return;
     }
 
+    if (route.name === "commit") {
+      navigate(buildCommitPath(nextRepositorySlug, route.commitSha));
+      return;
+    }
+
     navigate(buildRepositoryRunsPath(nextRepositorySlug));
   };
 
@@ -233,7 +252,9 @@ export const App = () => {
       ? runsError
       : route.name === "run" || route.name === "step"
         ? runError
-        : overviewError);
+        : route.name === "commit"
+          ? commitError
+          : overviewError);
 
   return (
     <main className="appShell">
@@ -272,7 +293,12 @@ export const App = () => {
             label="Overview"
           />
           <NavLink
-            active={route.name === "runs"}
+            active={
+              route.name === "runs" ||
+              route.name === "run" ||
+              route.name === "step" ||
+              route.name === "commit"
+            }
             href={
               selectedRepositorySlug ? buildRepositoryRunsPath(selectedRepositorySlug) : "/runs"
             }
@@ -316,6 +342,15 @@ export const App = () => {
           }}
           onApplyFilters={applyRunFilters}
           onPageChange={changeRunsPage}
+        />
+      ) : null}
+
+      {route.name === "commit" ? (
+        <CommitDetailPage
+          commit={commit}
+          treemap={commitTreemap}
+          treemapError={commitTreemapError}
+          error={error}
         />
       ) : null}
 

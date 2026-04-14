@@ -6,11 +6,11 @@ import {
 } from "d3-hierarchy";
 import { useState } from "react";
 
-import type { RunTreemap, TreemapNode } from "@verge/contracts";
+import type { CommitTreemap, RunTreemap, TreemapNode } from "@verge/contracts";
 
 import { EmptyState, StatusPill } from "./common.js";
 import { formatDurationMs, statusTone } from "../lib/format.js";
-import { buildStepPath, navigate } from "../lib/routing.js";
+import { navigate } from "../lib/routing.js";
 
 const treemapWidth = 1200;
 const treemapHeight = 520;
@@ -43,19 +43,6 @@ const shouldShowLabel = (node: TreemapLayoutNode): boolean => {
   return width >= 124 && height >= 48;
 };
 
-const buildProcessTargetPath = (input: {
-  repositorySlug: string;
-  runId: string;
-  stepId: string | null;
-  processId: string;
-}): string | null => {
-  if (!input.stepId) {
-    return null;
-  }
-
-  return `${buildStepPath(input.repositorySlug, input.runId, input.stepId)}#process-${input.processId}`;
-};
-
 const buildTreemapLayout = (tree: TreemapNode): TreemapLayoutNode => {
   const root = hierarchy(tree)
     .sum((node: TreemapNode) => node.valueMs)
@@ -73,16 +60,28 @@ const buildTreemapLayout = (tree: TreemapNode): TreemapLayoutNode => {
   );
 };
 
-export const RunTreemapView = ({
-  runId,
-  repositorySlug,
-  treemapData,
+type TreemapData = Pick<RunTreemap, "tree"> | Pick<CommitTreemap, "tree">;
+
+export const TreemapView = ({
+  treeData,
   treemapError,
+  errorTitle,
+  loadingTitle,
+  loadingBody,
+  emptyTitle,
+  emptyBody,
+  ariaLabel,
+  buildNodePath,
 }: {
-  runId: string;
-  repositorySlug: string;
-  treemapData: RunTreemap | null;
+  treeData: TreemapData | null;
   treemapError: string | null;
+  errorTitle: string;
+  loadingTitle: string;
+  loadingBody: string;
+  emptyTitle: string;
+  emptyBody: string;
+  ariaLabel: string;
+  buildNodePath?: (node: TreemapNode) => string | null;
 }) => {
   const [hoveredNode, setHoveredNode] = useState<{
     node: TreemapNode;
@@ -90,25 +89,20 @@ export const RunTreemapView = ({
     y: number;
   } | null>(null);
 
-  if (!treemapData) {
+  if (!treeData) {
     return (
       <EmptyState
-        title={treemapError ? "Duration map unavailable" : "Loading duration map"}
-        body={treemapError ?? "Fetching the run treemap and process duration breakdown."}
+        title={treemapError ? errorTitle : loadingTitle}
+        body={treemapError ?? loadingBody}
       />
     );
   }
 
-  if (!treemapData.tree.children?.length || treemapData.tree.valueMs === 0) {
-    return (
-      <EmptyState
-        title="No duration map yet"
-        body="The treemap appears once this run has observed process duration."
-      />
-    );
+  if (!treeData.tree.children?.length || treeData.tree.valueMs === 0) {
+    return <EmptyState title={emptyTitle} body={emptyBody} />;
   }
 
-  const root = buildTreemapLayout(treemapData.tree);
+  const root = buildTreemapLayout(treeData.tree);
   const renderedNodes = root.descendants().filter((node: TreemapLayoutNode) => node.depth > 0);
 
   return (
@@ -123,7 +117,7 @@ export const RunTreemapView = ({
       </div>
       <div className="treemapWrap">
         <svg
-          aria-label="Run duration treemap"
+          aria-label={ariaLabel}
           className="treemapSvg"
           role="img"
           viewBox={`0 0 ${treemapWidth} ${treemapHeight}`}
@@ -131,24 +125,7 @@ export const RunTreemapView = ({
           {renderedNodes.map((node) => {
             const width = node.x1 - node.x0;
             const height = node.y1 - node.y0;
-            const targetPath =
-              node.data.kind === "step"
-                ? buildStepPath(repositorySlug, runId, node.data.id)
-                : node.data.kind === "process"
-                  ? buildProcessTargetPath({
-                      repositorySlug,
-                      runId,
-                      stepId:
-                        node.parent?.data.kind === "step"
-                          ? node.parent.data.id
-                          : node.parent?.parent?.data.kind === "step"
-                            ? node.parent.parent.data.id
-                            : null,
-                      processId: node.data.id,
-                    })
-                  : node.parent?.data.kind === "step"
-                    ? buildStepPath(repositorySlug, runId, node.parent.data.id)
-                    : null;
+            const targetPath = buildNodePath?.(node.data) ?? null;
 
             return (
               <g
@@ -256,3 +233,5 @@ export const RunTreemapView = ({
     </div>
   );
 };
+
+export const RunTreemapView = TreemapView;

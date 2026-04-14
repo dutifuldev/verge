@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { createManualRunInputSchema, runListQuerySchema } from "@verge/contracts";
 import {
   getCommitDetail,
+  getCommitTreemap,
   getRepositoryDefinitionBySlug,
   getPullRequestDetail,
   getRepositoryBySlug,
@@ -101,13 +102,23 @@ export const registerPublicRoutes = (app: FastifyInstance, context: ApiContext):
     ),
   );
 
-  app.get("/repositories/:repo/commits/:sha", async (request) =>
-    getCommitDetail(
-      context.connection.db,
-      (request.params as { repo: string; sha: string }).repo,
-      (request.params as { repo: string; sha: string }).sha,
-    ),
-  );
+  app.get("/repositories/:repo/commits/:sha", async (request, reply) => {
+    const { repo, sha } = request.params as { repo: string; sha: string };
+    const detail = await getCommitDetail(context.connection.db, repo, sha);
+    if (!detail) {
+      return reply.code(404).send({ message: "Commit not found" });
+    }
+    return detail;
+  });
+
+  app.get("/repositories/:repo/commits/:sha/treemap", async (request, reply) => {
+    const { repo, sha } = request.params as { repo: string; sha: string };
+    const treemap = await getCommitTreemap(context.connection.db, repo, sha);
+    if (!treemap) {
+      return reply.code(404).send({ message: "Commit not found" });
+    }
+    return treemap;
+  });
 
   app.get("/repositories/:repo/pull-requests/:number", async (request) => {
     const { repo, number } = request.params as { repo: string; number: string };

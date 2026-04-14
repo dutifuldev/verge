@@ -12,7 +12,13 @@ import type {
 } from "@verge/contracts";
 import { determineFreshnessBucket } from "@verge/core";
 
-import { coalesceDurationMs, iso, parseJson, type VergeDatabase } from "./shared.js";
+import {
+  coalesceDurationMs,
+  iso,
+  parseJson,
+  summarizeStatuses,
+  type VergeDatabase,
+} from "./shared.js";
 import { listProcessRuns } from "./process-run-reads.js";
 import {
   selectRunRows,
@@ -217,22 +223,163 @@ export const getCommitDetail = async (
   db: Kysely<VergeDatabase>,
   repositorySlug: string,
   commitSha: string,
-): Promise<CommitDetail> => {
-  const runIds = await db
-    .selectFrom("runs")
-    .innerJoin("repositories", "repositories.id", "runs.repository_id")
-    .select(["runs.id"])
-    .where("repositories.slug", "=", repositorySlug)
+): Promise<CommitDetail | null> => {
+  const repository = await db
+    .selectFrom("repositories")
+    .select(["id", "slug"])
+    .where("slug", "=", repositorySlug)
+    .executeTakeFirst();
+
+  if (!repository) {
+    return null;
+  }
+
+  const runRows = await selectRunRows(db, repositorySlug)
     .where("runs.commit_sha", "=", commitSha)
     .orderBy("runs.created_at", "desc")
     .execute();
 
+  if (runRows.length === 0) {
+    return null;
+  }
+
+  const runs = await Promise.all(runRows.map((row) => toRunSummary(db, row)));
+  const commitProcessRows = await db
+    .selectFrom("commit_process_state")
+    .select([
+      "step_key as stepKey",
+      "step_display_name as stepDisplayName",
+      "step_kind as stepKind",
+      "process_key as processKey",
+      "process_display_name as processDisplayName",
+      "process_kind as processKind",
+      "file_path as filePath",
+      "selected_run_id as sourceRunId",
+      "selected_step_run_id as sourceStepRunId",
+      "selected_process_run_id as sourceProcessRunId",
+      "status",
+      "duration_ms as durationMs",
+      "reused",
+      "attempt_count as attemptCount",
+      "updated_at as updatedAt",
+    ])
+    .where("repository_id", "=", repository.id)
+    .where("commit_sha", "=", commitSha)
+    .orderBy("step_key", "asc")
+    .orderBy("process_key", "asc")
+    .execute();
+
+  const processRunsForCommit = await db
+    .selectFrom("process_runs")
+    .innerJoin("step_runs", "step_runs.id", "process_runs.step_run_id")
+    .innerJoin("runs", "runs.id", "step_runs.run_id")
+    .select([
+      "process_runs.duration_ms as durationMs",
+      "process_runs.started_at as startedAt",
+      "process_runs.finished_at as finishedAt",
+    ])
+    .where("runs.repository_id", "=", repository.id)
+    .where("runs.commit_sha", "=", commitSha)
+    .execute();
+
+  const processes = commitProcessRows.map((row) => ({
+    stepKey: row.stepKey,
+    stepDisplayName: row.stepDisplayName,
+    stepKind: row.stepKind,
+    sourceRunId: row.sourceRunId,
+    sourceStepRunId: row.sourceStepRunId,
+    sourceProcessRunId: row.sourceProcessRunId,
+    processKey: row.processKey,
+    processDisplayName: row.processDisplayName,
+    processKind: row.processKind,
+    filePath: row.filePath,
+    status: row.status as CommitDetail["processes"][number]["status"],
+    durationMs: row.durationMs,
+    reused: row.reused,
+    attemptCount: row.attemptCount,
+    updatedAt: row.updatedAt.toISOString(),
+  }));
+
+  const stepMap = new Map<
+    string,
+    {
+      stepKey: string;
+      stepDisplayName: string;
+      stepKind: string;
+      sourceRunId: string | null;
+      sourceStepRunId: string | null;
+      durationMs: number;
+      processCount: number;
+      statuses: string[];
+      updatedAt: number;
+    }
+  >();
+
+  for (const process of processes) {
+    const existing = stepMap.get(process.stepKey);
+    if (!existing) {
+      stepMap.set(process.stepKey, {
+        stepKey: process.stepKey,
+        stepDisplayName: process.stepDisplayName,
+        stepKind: process.stepKind,
+        sourceRunId: process.sourceRunId,
+        sourceStepRunId: process.sourceStepRunId,
+        durationMs: process.durationMs ?? 0,
+        processCount: 1,
+        statuses: [process.status],
+        updatedAt: Date.parse(process.updatedAt),
+      });
+      continue;
+    }
+
+    existing.durationMs += process.durationMs ?? 0;
+    existing.processCount += 1;
+    existing.statuses.push(process.status);
+    const processUpdatedAt = Date.parse(process.updatedAt);
+    if (processUpdatedAt >= existing.updatedAt) {
+      existing.updatedAt = processUpdatedAt;
+      existing.sourceRunId = process.sourceRunId;
+      existing.sourceStepRunId = process.sourceStepRunId;
+    }
+  }
+
+  const steps = [...stepMap.values()]
+    .map((step) => ({
+      stepKey: step.stepKey,
+      stepDisplayName: step.stepDisplayName,
+      stepKind: step.stepKind,
+      status: summarizeStatuses(step.statuses) as CommitDetail["steps"][number]["status"],
+      processCount: step.processCount,
+      durationMs: step.durationMs,
+      sourceRunId: step.sourceRunId,
+      sourceStepRunId: step.sourceStepRunId,
+    }))
+    .sort((left, right) => left.stepKey.localeCompare(right.stepKey));
+
   return {
-    repositorySlug,
+    repositorySlug: repository.slug,
     commitSha,
-    runs: (await Promise.all(runIds.map((run) => getRunDetail(db, run.id)))).filter(
-      (run): run is RunDetail => run !== null,
-    ),
+    status: (processes.length > 0
+      ? summarizeStatuses(processes.map((process) => process.status))
+      : summarizeStatuses(runs.map((run) => run.status))) as CommitDetail["status"],
+    steps,
+    processes,
+    runs,
+    executionCost: {
+      runCount: runs.length,
+      processRunCount: processRunsForCommit.length,
+      totalExecutionDurationMs: processRunsForCommit.reduce(
+        (total, processRun) =>
+          total +
+          (coalesceDurationMs(processRun.durationMs, processRun.startedAt, processRun.finishedAt) ??
+            0),
+        0,
+      ),
+      selectedProcessDurationMs: processes.reduce(
+        (total, process) => total + (process.durationMs ?? 0),
+        0,
+      ),
+    },
   };
 };
 

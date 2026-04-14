@@ -28,6 +28,10 @@ export const formatDurationMs = (durationMs: number | null): string => {
     return "Pending";
   }
 
+  if (durationMs < 1_000) {
+    return `${Math.max(0, durationMs)}ms`;
+  }
+
   const diffSeconds = Math.max(0, Math.round(durationMs / 1000));
 
   if (diffSeconds < 60) {

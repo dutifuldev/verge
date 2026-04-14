@@ -9,7 +9,7 @@ import {
   summarizeRunSteps,
   shortSha,
 } from "../lib/format.js";
-import { buildRunPath, navigate } from "../lib/routing.js";
+import { buildCommitPath, buildRunPath, navigate } from "../lib/routing.js";
 
 export const RunsPage = ({
   repositorySlug,
@@ -132,7 +132,17 @@ export const RunsPage = ({
                       </td>
                       <td>
                         <div className="cellStack">
-                          <span className="monoText">{shortSha(run.commitSha)}</span>
+                          <a
+                            className="tableLink monoText"
+                            href={buildCommitPath(run.repositorySlug, run.commitSha)}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              navigate(buildCommitPath(run.repositorySlug, run.commitSha));
+                            }}
+                          >
+                            {shortSha(run.commitSha)}
+                          </a>
                           <span className="secondaryText">
                             {run.changedFiles.length} changed files
                           </span>

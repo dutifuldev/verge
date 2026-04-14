@@ -127,6 +127,42 @@ export const runDetailSchema = runSummarySchema.extend({
   steps: z.array(stepRunSummarySchema),
 });
 
+export const commitProcessSummarySchema = z.object({
+  stepKey: z.string(),
+  stepDisplayName: z.string(),
+  stepKind: z.string(),
+  sourceRunId: z.string().uuid(),
+  sourceStepRunId: z.string().uuid(),
+  sourceProcessRunId: z.string().uuid(),
+  processKey: z.string(),
+  processDisplayName: z.string(),
+  processKind: z.string(),
+  filePath: z.string().nullable(),
+  status: processRunStatusSchema,
+  durationMs: z.number().int().nonnegative().nullable(),
+  reused: z.boolean(),
+  attemptCount: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime(),
+});
+
+export const commitStepSummarySchema = z.object({
+  stepKey: z.string(),
+  stepDisplayName: z.string(),
+  stepKind: z.string(),
+  status: stepRunStatusSchema,
+  processCount: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative().nullable(),
+  sourceRunId: z.string().uuid().nullable(),
+  sourceStepRunId: z.string().uuid().nullable(),
+});
+
+export const commitExecutionCostSchema = z.object({
+  runCount: z.number().int().nonnegative(),
+  processRunCount: z.number().int().nonnegative(),
+  totalExecutionDurationMs: z.number().int().nonnegative(),
+  selectedProcessDurationMs: z.number().int().nonnegative(),
+});
+
 export const repoAreaStateSchema = z.object({
   key: z.string(),
   displayName: z.string(),
@@ -147,7 +183,11 @@ export const repositoryHealthSchema = z.object({
 export const commitDetailSchema = z.object({
   repositorySlug: z.string(),
   commitSha: z.string(),
-  runs: z.array(runDetailSchema),
+  status: runStatusSchema,
+  steps: z.array(commitStepSummarySchema),
+  processes: z.array(commitProcessSummarySchema),
+  runs: z.array(runSummarySchema),
+  executionCost: commitExecutionCostSchema,
 });
 
 export const pullRequestDetailSchema = z.object({
@@ -164,5 +204,8 @@ export type PaginatedRunList = z.infer<typeof paginatedRunListSchema>;
 export type RunDetail = z.infer<typeof runDetailSchema>;
 export type StepRunDetail = z.infer<typeof stepRunDetailSchema>;
 export type RepositoryHealth = z.infer<typeof repositoryHealthSchema>;
+export type CommitProcessSummary = z.infer<typeof commitProcessSummarySchema>;
+export type CommitStepSummary = z.infer<typeof commitStepSummarySchema>;
+export type CommitExecutionCost = z.infer<typeof commitExecutionCostSchema>;
 export type CommitDetail = z.infer<typeof commitDetailSchema>;
 export type PullRequestDetail = z.infer<typeof pullRequestDetailSchema>;
