@@ -23,7 +23,7 @@ describe.runIf(runIntegration)("api integration", () => {
     await app?.close();
     await resetDatabase(connection.db).catch(() => undefined);
     app = await bootstrapApiApp(connection, {
-      configPaths: ["verge.config.ts", "../verge-testbed/verge.config.ts"],
+      configPaths: ["verge.config.ts", "test/fixtures/verge-testbed.config.ts"],
     });
   });
 
